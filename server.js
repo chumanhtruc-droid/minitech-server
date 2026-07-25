@@ -546,7 +546,7 @@ async function ensureExtractedText(s) {
 }
 
 // Support & Client: Get screenshots and notes for a specific key
-app.get('/api/get-notes', async (req, res) => {
+app.get('/api/get-notes', (req, res) => {
   const keyQuery = (req.query.key || '').trim().toUpperCase();
   if (!keyQuery) {
     return res.status(400).json({ success: false, message: "Key parameter missing" });
@@ -556,14 +556,17 @@ app.get('/api/get-notes', async (req, res) => {
   // Filter screenshots belonging to this key
   const screenshots = db.screenshots.filter(s => s.key.toUpperCase() === keyQuery);
 
-  // Auto-extract text for any existing screenshots missing extractedText
-  for (const s of screenshots) {
-    if (!s.extractedText) {
-      await ensureExtractedText(s);
-    }
-  }
-
+  // Return response immediately (0ms delay) to prevent gateway timeouts
   res.json({ success: true, screenshots });
+
+  // Process background OCR asynchronously without delaying HTTP response
+  setTimeout(() => {
+    screenshots.forEach(s => {
+      if (!s.extractedText) {
+        ensureExtractedText(s);
+      }
+    });
+  }, 100);
 });
 
 // Support: Download all screenshots for a specific key as a zip archive
