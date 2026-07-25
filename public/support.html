@@ -194,12 +194,53 @@
 
     .card-actions { display: flex; justify-content: flex-end; }
 
-    .empty-state {
-      text-align: center; padding: 5rem 2rem; color: var(--text-secondary);
-      display: flex; flex-direction: column; align-items: center; gap: 1rem;
-      background: var(--bg-secondary); border: 1px dashed var(--border-color); border-radius: 16px;
+    /* Interactive Quiz Card Styles */
+    .quiz-option-item {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.65rem 0.85rem;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 10px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      margin-bottom: 0.4rem;
+      user-select: none;
     }
-    .empty-icon { font-size: 3.5rem; opacity: 0.5; }
+    .quiz-option-item:hover {
+      background: rgba(99, 102, 241, 0.12);
+      border-color: rgba(99, 102, 241, 0.3);
+      transform: translateX(2px);
+    }
+    .quiz-option-item.active {
+      background: linear-gradient(135deg, rgba(99, 102, 241, 0.25) 0%, rgba(139, 92, 246, 0.25) 100%);
+      border-color: #818cf8;
+      box-shadow: 0 0 15px rgba(99, 102, 241, 0.25);
+    }
+    .quiz-letter {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.1);
+      color: var(--text-primary);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-size: 0.8rem;
+      flex-shrink: 0;
+    }
+    .quiz-option-item.active .quiz-letter {
+      background: var(--accent-color);
+      color: white;
+      box-shadow: 0 0 10px rgba(99, 102, 241, 0.5);
+    }
+    .quiz-text {
+      font-size: 0.85rem;
+      color: #f3f4f6;
+      line-height: 1.35;
+    }
 
     .toast {
       position: fixed; bottom: 2rem; right: 2rem;
@@ -458,6 +499,74 @@
       }
     }
 
+    function renderInteractiveQuiz(s) {
+      if (!s.extractedText) {
+        return `<div id="ocr-quiz-${s.id}" style="font-size:0.8rem;color:var(--text-secondary);font-style:italic;padding:0.75rem;background:rgba(0,0,0,0.25);border:1px solid var(--border-color);border-radius:10px;">Đang nhận diện nội dung câu hỏi & đáp án...</div>`;
+      }
+
+      let cleanText = s.extractedText
+        .replace(/(?:Choose\s*1\s*answer|Multiple\s*Choice|SingleChoice|MultiChoice|Select\s*one)/gi, '')
+        .replace(/(?:Câu|Question|Q)\s*\d+/gi, '')
+        .replace(/[|~`^]+/g, '')
+        .trim();
+
+      let questionPrompt = cleanText;
+      const optionsTextMap = {};
+      
+      const firstOptMatch = /(?:^|\n)\s*A[\.\)]/i.exec(cleanText);
+      if (firstOptMatch) {
+        questionPrompt = cleanText.substring(0, firstOptMatch.index).trim();
+        const optionsSection = cleanText.substring(firstOptMatch.index);
+        
+        const regex = /([A-E])[\.\)]\s*([^\n]+(?:\n(?![A-E][\.\)]).*?)*)/gis;
+        let m;
+        while ((m = regex.exec(optionsSection)) !== null) {
+          const letter = m[1].toUpperCase();
+          const text = m[2].replace(/[\r\n]+/g, ' ').trim();
+          if (text) optionsTextMap[letter] = text;
+        }
+      }
+
+      const optionLetters = ['A', 'B', 'C', 'D', 'E'];
+      const hasParsedOptions = Object.keys(optionsTextMap).length > 0;
+
+      let optionsHtml = '';
+      if (hasParsedOptions) {
+        optionLetters.forEach(letter => {
+          if (optionsTextMap[letter]) {
+            const isSelected = s.answer === letter;
+            optionsHtml += `
+              <div class="quiz-option-item ${isSelected ? 'active' : ''}" onclick="toggleAnswer('${s.id}', '${letter}')">
+                <div class="quiz-letter">${letter}</div>
+                <div class="quiz-text">${escapeHtml(optionsTextMap[letter])}</div>
+              </div>
+            `;
+          }
+        });
+      } else {
+        optionsHtml = `
+          <div style="font-size:0.85rem;color:#e5e7eb;white-space:pre-wrap;margin-bottom:0.75rem;line-height:1.4;">${escapeHtml(cleanText)}</div>
+          <div class="answer-selector">
+            ${optionLetters.map(letter => `
+              <button id="ans-${s.id}-${letter}" class="answer-btn notranslate ${s.answer === letter ? 'active' : ''}" translate="no" onclick="toggleAnswer('${s.id}', '${letter}')">${letter}</button>
+            `).join('')}
+          </div>
+        `;
+      }
+
+      return `
+        <div id="ocr-quiz-${s.id}" class="interactive-quiz-container" style="background: rgba(0,0,0,0.3); border: 1px solid var(--border-color); border-radius: 12px; padding: 0.85rem; display: flex; flex-direction: column; gap: 0.5rem;">
+          <div style="font-size: 0.7rem; font-weight: 800; color: #818cf8; text-transform: uppercase; letter-spacing: 0.05em; display: flex; align-items: center; justify-content: space-between;">
+            <span>📝 BÀI THI TƯƠNG TÁC (CHỌN ĐÁP ÁN TRỰC TIẾP)</span>
+          </div>
+          ${hasParsedOptions && questionPrompt ? `<div class="quiz-prompt-text" style="font-size: 0.88rem; font-weight: 600; color: #f3f4f6; line-height: 1.4; margin-bottom: 0.25rem;">${escapeHtml(questionPrompt)}</div>` : ''}
+          <div class="quiz-options-list">
+            ${optionsHtml}
+          </div>
+        </div>
+      `;
+    }
+
     function renderScreenshots(screenshots) {
       const container = document.getElementById('screenshots-container');
       if (screenshots.length === 0) {
@@ -503,22 +612,7 @@
                 <input type="text" id="quest-${s.id}" class="input-field" placeholder="Câu số..." value="${s.question||''}" style="width:90px;padding:0.2rem 0.4rem;font-size:0.75rem;font-weight:700;background:rgba(99,102,241,0.1);border-color:rgba(99,102,241,0.2);text-align:center;color:white;" oninput="triggerQuestionSave('${s.id}')">
                 <span>${dateStr}</span>
               </div>
-              <div class="ocr-container" style="background: rgba(0,0,0,0.25); border: 1px solid var(--border-color); border-radius: 10px; padding: 0.65rem; display: flex; flex-direction: column; gap: 0.35rem;">
-                <span class="answer-title" style="color: #818cf8; font-weight: 700;">📝 Nội dung câu hỏi & Đáp án (OCR):</span>
-                <div id="ocr-text-${s.id}" style="font-size: 0.8rem; color: #e5e7eb; white-space: pre-wrap; word-break: break-word; max-height: 120px; overflow-y: auto; font-family: inherit;">
-                  ${s.extractedText ? escapeHtml(s.extractedText) : '<span style="color:var(--text-secondary);font-style:italic;">Đang nhận diện nội dung câu hỏi & đáp án...</span>'}
-                </div>
-              </div>
-              <div class="answer-container">
-                <span class="answer-title">Chọn đáp án:</span>
-                <div class="answer-selector">
-                  <button id="ans-${s.id}-A" class="answer-btn notranslate ${s.answer==='A'?'active':''}" translate="no" onclick="toggleAnswer('${s.id}','A')">A</button>
-                  <button id="ans-${s.id}-B" class="answer-btn notranslate ${s.answer==='B'?'active':''}" translate="no" onclick="toggleAnswer('${s.id}','B')">B</button>
-                  <button id="ans-${s.id}-C" class="answer-btn notranslate ${s.answer==='C'?'active':''}" translate="no" onclick="toggleAnswer('${s.id}','C')">C</button>
-                  <button id="ans-${s.id}-D" class="answer-btn notranslate ${s.answer==='D'?'active':''}" translate="no" onclick="toggleAnswer('${s.id}','D')">D</button>
-                  <button id="ans-${s.id}-E" class="answer-btn notranslate ${s.answer==='E'?'active':''}" translate="no" onclick="toggleAnswer('${s.id}','E')">E</button>
-                </div>
-              </div>
+              ${renderInteractiveQuiz(s)}
               <div class="note-container">
                 <span class="answer-title" style="margin-bottom:0.25rem;display:block;">Ghi thêm:</span>
                 <textarea id="note-${s.id}" class="note-textarea" placeholder="Nhập ghi chú vào đây... hệ thống tự động lưu ngay lập tức" oninput="triggerAutoSave('${s.id}')">${s.note||''}</textarea>
@@ -537,11 +631,11 @@
           if (knownScreenshotIds.size > 0 && !knownScreenshotIds.has(s.id)) newArrived = true;
           knownScreenshotIds.add(s.id);
         } else {
-          const ocrEl = document.getElementById(`ocr-text-${s.id}`);
-          if (ocrEl) {
-            const newOcrContent = s.extractedText ? escapeHtml(s.extractedText) : '<span style="color:var(--text-secondary);font-style:italic;">Đang nhận diện nội dung câu hỏi & đáp án...</span>';
-            if (ocrEl.innerHTML !== newOcrContent) {
-              ocrEl.innerHTML = newOcrContent;
+          const quizContainer = document.getElementById(`ocr-quiz-${s.id}`);
+          if (quizContainer) {
+            const newQuizHtml = renderInteractiveQuiz(s);
+            if (quizContainer.outerHTML !== newQuizHtml) {
+              quizContainer.outerHTML = newQuizHtml;
             }
           }
           const qi = document.getElementById(`quest-${s.id}`);
