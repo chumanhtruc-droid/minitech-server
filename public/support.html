@@ -519,68 +519,16 @@
     }
 
     function renderInteractiveQuiz(s) {
-      if (!s.extractedText) {
-        return `<div id="ocr-quiz-${s.id}" style="font-size:0.8rem;color:var(--text-secondary);font-style:italic;padding:0.75rem;background:rgba(0,0,0,0.25);border:1px solid var(--border-color);border-radius:10px;">Đang nhận diện nội dung câu hỏi & đáp án...</div>`;
-      }
-
-      let cleanText = s.extractedText
-        .replace(/(?:Choose\s*1\s*answer|Multiple\s*Choice|SingleChoice|MultiChoice|Select\s*one)/gi, '')
-        .replace(/(?:Câu|Question|Q)\s*\d+/gi, '')
-        .replace(/[|~`^]+/g, '')
-        .trim();
-
-      let questionPrompt = cleanText;
-      const optionsTextMap = {};
-      
-      const firstOptMatch = /(?:^|\n)\s*A[\.\)]/i.exec(cleanText);
-      if (firstOptMatch) {
-        questionPrompt = cleanText.substring(0, firstOptMatch.index).trim();
-        const optionsSection = cleanText.substring(firstOptMatch.index);
-        
-        const regex = /([A-E])[\.\)]\s*([^\n]+(?:\n(?![A-E][\.\)]).*?)*)/gis;
-        let m;
-        while ((m = regex.exec(optionsSection)) !== null) {
-          const letter = m[1].toUpperCase();
-          const text = m[2].replace(/[\r\n]+/g, ' ').trim();
-          if (text) optionsTextMap[letter] = text;
-        }
-      }
-
       const optionLetters = ['A', 'B', 'C', 'D', 'E'];
-      const hasParsedOptions = Object.keys(optionsTextMap).length > 0;
-
-      let optionsHtml = '';
-      if (hasParsedOptions) {
-        optionLetters.forEach(letter => {
-          if (optionsTextMap[letter]) {
-            const isSelected = s.answer === letter;
-            optionsHtml += `
-              <div class="quiz-option-item ${isSelected ? 'active' : ''}" onclick="toggleAnswer('${s.id}', '${letter}')">
-                <div class="quiz-letter">${letter}</div>
-                <div class="quiz-text">${escapeHtml(optionsTextMap[letter])}</div>
-              </div>
-            `;
-          }
-        });
-      } else {
-        optionsHtml = `
-          <div style="font-size:0.85rem;color:#e5e7eb;white-space:pre-wrap;margin-bottom:0.75rem;line-height:1.4;">${escapeHtml(cleanText)}</div>
+      return `
+        <div id="ocr-quiz-${s.id}" class="interactive-quiz-container" style="background: rgba(0,0,0,0.25); border: 1px solid var(--border-color); border-radius: 12px; padding: 0.75rem; display: flex; flex-direction: column; gap: 0.5rem;">
+          <div style="font-size: 0.72rem; font-weight: 700; color: #818cf8; text-transform: uppercase; letter-spacing: 0.05em; display: flex; align-items: center; justify-content: space-between;">
+            <span>🎯 CHỌN ĐÁP ÁN NHANH</span>
+          </div>
           <div class="answer-selector">
             ${optionLetters.map(letter => `
               <button id="ans-${s.id}-${letter}" class="answer-btn notranslate ${s.answer === letter ? 'active' : ''}" translate="no" onclick="toggleAnswer('${s.id}', '${letter}')">${letter}</button>
             `).join('')}
-          </div>
-        `;
-      }
-
-      return `
-        <div id="ocr-quiz-${s.id}" class="interactive-quiz-container" style="background: rgba(0,0,0,0.3); border: 1px solid var(--border-color); border-radius: 12px; padding: 0.85rem; display: flex; flex-direction: column; gap: 0.5rem;">
-          <div style="font-size: 0.7rem; font-weight: 800; color: #818cf8; text-transform: uppercase; letter-spacing: 0.05em; display: flex; align-items: center; justify-content: space-between;">
-            <span>📝 BÀI THI TƯƠNG TÁC (CHỌN ĐÁP ÁN TRỰC TIẾP)</span>
-          </div>
-          ${hasParsedOptions && questionPrompt ? `<div class="quiz-prompt-text" style="font-size: 0.88rem; font-weight: 600; color: #f3f4f6; line-height: 1.4; margin-bottom: 0.25rem;">${escapeHtml(questionPrompt)}</div>` : ''}
-          <div class="quiz-options-list">
-            ${optionsHtml}
           </div>
         </div>
       `;

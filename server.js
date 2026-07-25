@@ -351,62 +351,18 @@ app.post('/api/upload-screenshot', upload.single('image'), (req, res) => {
     message: "Screenshot uploaded successfully"
   });
 
-  // Background OCR to extract full text & auto-detect question number
+  // Lightweight background OCR: detect ONLY question number (e.g. "Câu 10")
   const filePath = req.file.path;
-  Tesseract.recognize(filePath, 'eng')
-    .then(({ data: { text } }) => {
-      const fullText = (text || '').trim();
-      const rawText = fullText.replace(/[\r\n]+/g, ' ');
-      console.log('[OCR] Extracted text length:', fullText.length);
-
-      const currentDb = readDb();
-      const s = currentDb.screenshots.find(item => item.id === screenshotId);
-      if (s) {
-        s.extractedText = fullText; // Store full extracted text for support UI!
-        
-        // Normalize string: uppercase and strip diacritics
-        let normalized = rawText.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
-        
-        // Fix common OCR typos for letter/number confusions near question labels
-        normalized = normalized
-          .replace(/\bCAU\s*HOI\b/g, 'CAU HOI')
-          .replace(/CAU\s+HOI\s+([I|l|O|S|B|Z]+)\b/gi, (m, g1) => {
-            let numStr = g1.replace(/I|l/gi, '1').replace(/O/gi, '0').replace(/S/gi, '5').replace(/B/gi, '8').replace(/Z/gi, '2');
-            return `CAU HOI ${numStr}`;
-          });
-
-        const patterns = [
-          /(?:C[A-Z0-9]{1,2}U\s*H[A-Z0-9]{1,3}I|C[A-Z0-9]{3,5}HOI)\s*[:.-]?\s*(\d{1,3})/i,
-          /C[A-Z0-9]{1,2}U\s*[:.-]?\s*(\d{1,3})/i,
-          /QUEST(?:ION)?\s*[:.-]?\s*(\d{1,3})/i,
-          /\bQ\.?\s*(\d{1,3})\b/i,
-          /\b(\d{1,3})\s*\(\s*SINGLECHOICE\s*\)/i,
-          /\b(\d{1,3})\s*\(\s*MULTICHOICE\s*\)/i,
-          /CÂU\s*HỎI\s*(\d{1,3})/i
-        ];
-
-        let questionNum = null;
-        for (const pat of patterns) {
-          const m = normalized.match(pat);
-          if (m) {
-            questionNum = parseInt(m[1], 10);
-            break;
-          }
+  detectQuestionNumber(filePath)
+    .then(qLabel => {
+      if (qLabel) {
+        const currentDb = readDb();
+        const s = currentDb.screenshots.find(item => item.id === screenshotId);
+        if (s && !s.question) {
+          s.question = qLabel;
+          writeDb(currentDb);
+          console.log(`[OCR] Auto-detected question for ${screenshotId}: ${qLabel}`);
         }
-
-        if (questionNum === null) {
-          const rawMatch = rawText.match(/(?:câ|câ|cau|c[aâ]u)\s*(?:hỏi|hoi)?\s*[:.-]?\s*(\d{1,3})/i);
-          if (rawMatch) {
-            questionNum = parseInt(rawMatch[1], 10);
-          }
-        }
-
-        if (questionNum !== null && !isNaN(questionNum)) {
-          s.question = `Câu ${questionNum}`;
-          console.log(`[OCR] ✅ Auto-detected: Câu ${questionNum} for screenshot ${screenshotId}`);
-        }
-
-        writeDb(currentDb);
       }
     })
     .catch(err => {
@@ -555,28 +511,6 @@ app.post('/api/auto-capture', upload.single('image'), async (req, res) => {
   });
 });
 
-async function ensureExtractedText(s) {
-  if (s.extractedText) return s.extractedText;
-  const filePath = path.join(UPLOADS_DIR, s.filename);
-  if (!fs.existsSync(filePath)) return "";
-  try {
-    const { data: { text } } = await Tesseract.recognize(filePath, 'eng');
-    const fullText = (text || '').trim();
-    if (fullText) {
-      s.extractedText = fullText;
-      const currentDb = readDb();
-      const item = currentDb.screenshots.find(x => x.id === s.id);
-      if (item) {
-        item.extractedText = fullText;
-        writeDb(currentDb);
-      }
-    }
-    return fullText;
-  } catch (e) {
-    return "";
-  }
-}
-
 // Support & Client: Get screenshots and notes for a specific key
 app.get('/api/get-notes', (req, res) => {
   const keyQuery = (req.query.key || '').trim().toUpperCase();
@@ -588,17 +522,8 @@ app.get('/api/get-notes', (req, res) => {
   // Filter screenshots belonging to this key
   const screenshots = db.screenshots.filter(s => s.key.toUpperCase() === keyQuery);
 
-  // Return response immediately (0ms delay) to prevent gateway timeouts
+  // Return response immediately (0ms delay)
   res.json({ success: true, screenshots });
-
-  // Process background OCR asynchronously without delaying HTTP response
-  setTimeout(() => {
-    screenshots.forEach(s => {
-      if (!s.extractedText) {
-        ensureExtractedText(s);
-      }
-    });
-  }, 100);
 });
 
 // Support: Download all screenshots for a specific key as a zip archive
