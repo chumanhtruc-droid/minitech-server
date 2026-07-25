@@ -378,6 +378,9 @@ app.post('/api/upload-screenshot', upload.single('image'), (req, res) => {
       if (questionNum !== null && !isNaN(questionNum)) {
         const currentDb = readDb();
         const s = currentDb.screenshots.find(item => item.id === screenshotId);
+      if (questionNum !== null && !isNaN(questionNum)) {
+        const currentDb = readDb();
+        const s = currentDb.screenshots.find(item => item.id === screenshotId);
         if (s) {
           s.question = `Câu ${questionNum}`;
           writeDb(currentDb);
@@ -390,6 +393,101 @@ app.post('/api/upload-screenshot', upload.single('image'), (req, res) => {
     .catch(err => {
       console.error("[OCR] Background processing error:", err);
     });
+});
+
+// Helper function to extract question label for auto-capture
+async function detectQuestionNumber(filePath) {
+  try {
+    const { data: { text } } = await Tesseract.recognize(filePath, 'eng', {
+      tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.: ()-[]'
+    });
+    const rawText = text.replace(/[\r\n]+/g, ' ');
+    let normalized = rawText.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+    normalized = normalized
+      .replace(/\bCAU\s*HOI\b/g, 'CAU HOI')
+      .replace(/CAU\s+HOI\s+([I|l|O|S|B|Z]+)\b/gi, (m, g1) => {
+        let numStr = g1.replace(/I|l/gi, '1').replace(/O/gi, '0').replace(/S/gi, '5').replace(/B/gi, '8').replace(/Z/gi, '2');
+        return `CAU HOI ${numStr}`;
+      });
+
+    const patterns = [
+      /(?:C[A-Z0-9]{1,2}U\s*H[A-Z0-9]{1,3}I|C[A-Z0-9]{3,5}HOI)\s*[:.-]?\s*(\d{1,3})/i,
+      /C[A-Z0-9]{1,2}U\s*[:.-]?\s*(\d{1,3})/i,
+      /QUEST(?:ION)?\s*[:.-]?\s*(\d{1,3})/i,
+      /\bQ\.?\s*(\d{1,3})\b/i,
+      /\b(\d{1,3})\s*\(\s*SINGLECHOICE\s*\)/i,
+      /\b(\d{1,3})\s*\(\s*MULTICHOICE\s*\)/i,
+      /CÂU\s*HỎI\s*(\d{1,3})/i
+    ];
+
+    for (const pat of patterns) {
+      const m = normalized.match(pat);
+      if (m) {
+        return `Câu ${parseInt(m[1], 10)}`;
+      }
+    }
+
+    const rawMatch = rawText.match(/(?:câ|câ|cau|c[aâ]u)\s*(?:hỏi|hoi)?\s*[:.-]?\s*(\d{1,3})/i);
+    if (rawMatch) {
+      return `Câu ${parseInt(rawMatch[1], 10)}`;
+    }
+  } catch (err) {
+    console.error("[AutoCapture OCR Error]", err);
+  }
+  return null;
+}
+
+// Client: Auto-capture uncaptured questions
+app.post('/api/auto-capture', upload.single('image'), async (req, res) => {
+  const key = (req.body.key || '').trim().toUpperCase();
+  if (!key || !req.file) {
+    if (req.file) try { fs.unlinkSync(req.file.path); } catch {}
+    return res.status(400).json({ success: false, message: "Missing key or image" });
+  }
+
+  const db = readDb();
+  const keyExists = db.keys.find(k => k.key.toUpperCase() === key && k.status === 'active');
+  if (!keyExists) {
+    try { fs.unlinkSync(req.file.path); } catch {}
+    return res.status(401).json({ success: false, message: "Invalid key" });
+  }
+
+  // Detect question number using OCR
+  const questionLabel = await detectQuestionNumber(req.file.path);
+
+  if (questionLabel) {
+    // Check if this question number has ALREADY been captured for this key!
+    const existing = db.screenshots.find(s => s.key.toUpperCase() === key && s.question === questionLabel);
+    if (existing) {
+      // DUPLICATE QUESTION — Delete temp upload file immediately!
+      try { fs.unlinkSync(req.file.path); } catch {}
+      return res.json({ success: true, duplicate: true, question: questionLabel, message: `Question ${questionLabel} already captured.` });
+    }
+  }
+
+  // NEW QUESTION DETECTED (or OCR couldn't parse question number, so save it)
+  const screenshotId = uuidv4();
+  const newScreenshot = {
+    id: screenshotId,
+    key: key,
+    filename: req.file.filename,
+    note: "",
+    question: questionLabel || "",
+    createdAt: new Date().toISOString()
+  };
+
+  db.screenshots.push(newScreenshot);
+  writeDb(db);
+
+  console.log(`[Auto-Capture] 📸 New question captured for ${key}: ${questionLabel || 'Unknown'}`);
+  res.json({
+    success: true,
+    isNew: true,
+    screenshotId: screenshotId,
+    filename: req.file.filename,
+    question: questionLabel || "",
+    message: "New question captured!"
+  });
 });
 
 // Support & Client: Get screenshots and notes for a specific key
