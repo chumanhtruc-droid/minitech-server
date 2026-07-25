@@ -1117,6 +1117,21 @@
           lbl.style.display = 'block';
           lbl.innerText = durationHours === 0 ? '⏳ Thời hạn: Không giới hạn' : `⏱ Thời hạn: ${formatDuration(durationHours)} (bắt đầu từ lúc người dùng nhập key)`;
           showToast("Tạo key thành công!");
+
+          // Instantly insert key into keysList and render table (0ms delay)
+          const newKeyObj = {
+            key: data.key,
+            durationHours: durationHours,
+            createdAt: new Date().toISOString(),
+            status: 'active',
+            activatedAt: null,
+            expiresAt: null
+          };
+          if (!keysList) keysList = [];
+          keysList = [newKeyObj, ...keysList.filter(x => x.key !== data.key)];
+          renderKeys();
+
+          // Refresh from server
           loadKeys();
         }
       } catch (err) {
@@ -1601,13 +1616,15 @@
       });
     }, 1000);
 
-    // Initial load
+    // Initial load handlers
+    document.addEventListener('DOMContentLoaded', loadKeys);
+    window.addEventListener('load', loadKeys);
     loadKeys();
 
-    // Reload keys every 10s to detect new activations
+    // Reload keys every 3s to detect new activations & updates
     setInterval(() => {
       if (activeTab === 'admin') loadKeys();
-    }, 10000);
+    }, 3000);
 
     // Spin animation styling for autosave spinner
     const styleSheet = document.createElement("style");
