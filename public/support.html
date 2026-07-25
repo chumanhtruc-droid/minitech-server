@@ -453,7 +453,6 @@
         container.innerHTML = '<div class="empty-state" style="padding: 1.5rem; font-size: 0.85rem;">Chưa có người dùng</div>';
         return;
       }
-      let keyWithScreenshots = null;
 
       keys.forEach(k => {
         const count = k.screenshotCount || 0;
@@ -466,19 +465,7 @@
         `;
         item.onclick = () => selectSupportKey(k.key);
         container.appendChild(item);
-
-        if (count > 0 && !keyWithScreenshots) {
-          keyWithScreenshots = k.key;
-        }
       });
-
-      // Auto select key with screenshots on initial load
-      if (!activeSupportKey || (keyWithScreenshots && activeSupportKey !== keyWithScreenshots)) {
-        const currentActiveObj = keys.find(x => x.key === activeSupportKey);
-        if (!currentActiveObj || (currentActiveObj.screenshotCount === 0 && keyWithScreenshots)) {
-          selectSupportKey(keyWithScreenshots || keys[0].key);
-        }
-      }
     }
 
     function selectSupportKey(key) {
@@ -502,7 +489,7 @@
     function handleManualKeyInput() {
       const inputEl = document.getElementById('manual-key-input');
       const val = inputEl.value.replace(/['"\s]/g, '').trim().toUpperCase();
-      if (val.length === 19) {
+      if (val.length >= 4) {
         selectSupportKey(val);
       }
     }
