@@ -453,35 +453,54 @@
         container.innerHTML = '<div class="empty-state" style="padding: 1.5rem; font-size: 0.85rem;">Chưa có người dùng</div>';
         return;
       }
+      let autoToSelect = null;
+
       keys.forEach(k => {
         const count = k.screenshotCount || 0;
         const item = document.createElement('div');
         item.className = 'sidebar-key-item' + (activeSupportKey === k.key ? ' active-key' : '');
         item.id = 'sidebar-key-' + k.key;
         item.innerHTML = `
-          <span style="font-family: monospace; font-size: 0.78rem;">${k.key.substring(0, 12)}...</span>
+          <span style="font-family: monospace; font-size: 0.78rem;">${k.key}</span>
           <span class="key-badge">${count}</span>
         `;
         item.onclick = () => selectSupportKey(k.key);
         container.appendChild(item);
+
+        if (count > 0 && !autoToSelect) {
+          autoToSelect = k.key;
+        }
       });
+
+      // Auto select key with screenshots on initial load if none selected
+      if (!activeSupportKey && (autoToSelect || keys[0]?.key)) {
+        selectSupportKey(autoToSelect || keys[0].key);
+      }
     }
 
     function selectSupportKey(key) {
-      activeSupportKey = key;
-      document.getElementById('active-key-title').textContent = key;
-      document.getElementById('manual-key-input').value = key;
+      if (!key) return;
+      const cleanKey = key.replace(/['"\s]/g, '').trim().toUpperCase();
+      if (!cleanKey) return;
+
+      activeSupportKey = cleanKey;
+      document.getElementById('active-key-title').textContent = cleanKey;
+      document.getElementById('manual-key-input').value = cleanKey;
       document.querySelectorAll('.sidebar-key-item').forEach(el => el.classList.remove('active-key'));
-      const el = document.getElementById('sidebar-key-' + key);
+      const el = document.getElementById('sidebar-key-' + cleanKey);
       if (el) el.classList.add('active-key');
+
       knownScreenshotIds.clear();
       document.getElementById('screenshots-container').innerHTML = '';
       loadSelectedScreenshots(false);
     }
 
     function handleManualKeyInput() {
-      const val = document.getElementById('manual-key-input').value.trim().toUpperCase();
-      if (val.length >= 5) selectSupportKey(val);
+      const inputEl = document.getElementById('manual-key-input');
+      const val = inputEl.value.replace(/['"\s]/g, '').trim().toUpperCase();
+      if (val.length === 19) {
+        selectSupportKey(val);
+      }
     }
 
     async function loadSelectedScreenshots(explicit = false) {

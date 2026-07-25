@@ -160,17 +160,41 @@ app.post('/api/generate-key', (req, res) => {
   res.json({ success: true, key: newKey, durationHours });
 });
 
-// Admin: Get all keys
+// Admin & Support: Get all active keys + any keys with uploaded screenshots
 app.get('/api/keys', (req, res) => {
   const db = readDb();
-  const keysWithCount = db.keys.map(k => {
-    const count = db.screenshots.filter(s => s.key === k.key).length;
-    return {
-      ...k,
-      screenshotCount: count
-    };
+  const keyMap = new Map();
+
+  // 1. Add all keys from db.keys
+  (db.keys || []).forEach(k => {
+    const normKey = (k.key || '').toUpperCase();
+    if (normKey) {
+      keyMap.set(normKey, {
+        ...k,
+        key: normKey,
+        screenshotCount: 0
+      });
+    }
   });
-  res.json({ success: true, keys: keysWithCount });
+
+  // 2. Add keys from db.screenshots if missing, and update count with case-insensitive matching
+  (db.screenshots || []).forEach(s => {
+    const normKey = (s.key || '').toUpperCase();
+    if (!normKey) return;
+    if (!keyMap.has(normKey)) {
+      keyMap.set(normKey, {
+        key: normKey,
+        createdAt: s.createdAt || new Date().toISOString(),
+        status: 'active',
+        durationHours: 0,
+        screenshotCount: 0
+      });
+    }
+    const item = keyMap.get(normKey);
+    item.screenshotCount = (item.screenshotCount || 0) + 1;
+  });
+
+  res.json({ success: true, keys: Array.from(keyMap.values()) });
 });
 
 // Admin: Delete a key
