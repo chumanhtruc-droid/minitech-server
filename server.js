@@ -4,7 +4,6 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
-const Tesseract = require('tesseract.js');
 const AdmZip = require('adm-zip');
 
 const app = express();
@@ -317,118 +316,33 @@ app.post('/api/upload-screenshot', upload.single('image'), (req, res) => {
     return res.status(400).json({ success: false, message: "No image file provided" });
   }
   
+  // Auto assign sequential question label (Câu 1, Câu 2, Câu 3...)
+  const existingScreenshots = db.screenshots.filter(s => s.key.toUpperCase() === key);
+  const qNum = existingScreenshots.length + 1;
+  const questionLabel = `Câu ${qNum}`;
+
   const screenshotId = uuidv4();
   const newScreenshot = {
     id: screenshotId,
     key: key,
     filename: req.file.filename,
     note: "",
-    question: "",
+    question: questionLabel,
     createdAt: new Date().toISOString()
   };
   
   db.screenshots.push(newScreenshot);
   writeDb(db);
   
+  console.log(`[Upload] 📸 New screenshot received for ${key}: ${questionLabel} (${req.file.filename})`);
   res.json({
     success: true,
     screenshotId: screenshotId,
     filename: req.file.filename,
+    question: questionLabel,
     message: "Screenshot uploaded successfully"
   });
-
-  // Lightweight background OCR: detect ONLY question number (e.g. "Câu 10")
-  const filePath = req.file.path;
-  detectQuestionNumber(filePath)
-    .then(qLabel => {
-      if (qLabel) {
-        const currentDb = readDb();
-        const s = currentDb.screenshots.find(item => item.id === screenshotId);
-        if (s && !s.question) {
-          s.question = qLabel;
-          writeDb(currentDb);
-          console.log(`[OCR] Auto-detected question for ${screenshotId}: ${qLabel}`);
-        }
-      }
-    })
-    .catch(err => {
-      console.error("[OCR] Background processing error:", err);
-    });
 });
-
-// Calculate image difference ratio between two JPEG files (skipping static metadata headers)
-function calculateImageDiff(path1, path2) {
-  try {
-    if (!fs.existsSync(path1) || !fs.existsSync(path2)) return 1.0;
-    const buf1 = fs.readFileSync(path1);
-    const buf2 = fs.readFileSync(path2);
-    if (buf1.length === 0 || buf2.length === 0) return 1.0;
-
-    // Skip JPEG headers (first ~3000 bytes) to compare actual scan payload
-    const start1 = Math.min(3000, Math.floor(buf1.length * 0.15));
-    const start2 = Math.min(3000, Math.floor(buf2.length * 0.15));
-    const len1 = Math.max(10, buf1.length - start1 - 500);
-    const len2 = Math.max(10, buf2.length - start2 - 500);
-
-    const samples = 300;
-    const step1 = Math.max(1, Math.floor(len1 / samples));
-    const step2 = Math.max(1, Math.floor(len2 / samples));
-    
-    let diffCount = 0;
-    for (let i = 0; i < samples; i++) {
-      const b1 = buf1[start1 + i * step1];
-      const b2 = buf2[start2 + i * step2];
-      if (Math.abs(b1 - b2) > 25) {
-        diffCount++;
-      }
-    }
-    return diffCount / samples;
-  } catch (e) {
-    return 1.0;
-  }
-}
-
-// Helper function to extract question label for auto-capture
-async function detectQuestionNumber(filePath) {
-  try {
-    // Run Tesseract without restrictive whitelist to support Unicode & Vietnamese diacritics
-    const { data: { text } } = await Tesseract.recognize(filePath, 'eng');
-    const rawText = text.replace(/[\r\n]+/g, ' ');
-    let normalized = rawText.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
-    normalized = normalized
-      .replace(/\bCAU\s*HOI\b/g, 'CAU HOI')
-      .replace(/CAU\s+HOI\s+([I|l|O|S|B|Z]+)\b/gi, (m, g1) => {
-        let numStr = g1.replace(/I|l/gi, '1').replace(/O/gi, '0').replace(/S/gi, '5').replace(/B/gi, '8').replace(/Z/gi, '2');
-        return `CAU HOI ${numStr}`;
-      });
-
-    const patterns = [
-      /(?:C[A-Z0-9]{1,2}U\s*H[A-Z0-9]{1,3}I|C[A-Z0-9]{3,5}HOI)\s*[:.-]?\s*(\d{1,3})/i,
-      /C[A-Z0-9]{1,2}U\s*[:.-]?\s*(\d{1,3})/i,
-      /QUEST(?:ION)?\s*[:.-]?\s*(\d{1,3})/i,
-      /\bQ\.?\s*(\d{1,3})\b/i,
-      /\b(\d{1,3})\s*\(\s*SINGLECHOICE\s*\)/i,
-      /\b(\d{1,3})\s*\(\s*MULTICHOICE\s*\)/i,
-      /CÂU\s*HỎI\s*(\d{1,3})/i,
-      /CÂU\s*(\d{1,3})/i
-    ];
-
-    for (const pat of patterns) {
-      const m = normalized.match(pat);
-      if (m) {
-        return `Câu ${parseInt(m[1], 10)}`;
-      }
-    }
-
-    const rawMatch = rawText.match(/(?:câ|câ|cau|c[aâ]u)\s*(?:hỏi|hoi)?\s*[:.-]?\s*(\d{1,3})/i);
-    if (rawMatch) {
-      return `Câu ${parseInt(rawMatch[1], 10)}`;
-    }
-  } catch (err) {
-    console.error("[AutoCapture OCR Error]", err);
-  }
-  return null;
-}
 
 // Client: Auto-capture uncaptured questions
 app.post('/api/auto-capture', upload.single('image'), async (req, res) => {
