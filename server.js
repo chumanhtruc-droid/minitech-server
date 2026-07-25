@@ -258,20 +258,6 @@ app.get('/api/verify-key', (req, res) => {
     return res.json({ success: false, message: "Key has expired" });
   }
 
-  // Clear previous session screenshots for this key on every client startup/activation
-  const toDelete = db.screenshots.filter(s => s.key.toUpperCase() === keyQuery);
-  if (toDelete.length > 0) {
-    toDelete.forEach(s => {
-      const filePath = path.join(UPLOADS_DIR, s.filename);
-      if (fs.existsSync(filePath)) {
-        try { fs.unlinkSync(filePath); } catch (err) { /* ignore */ }
-      }
-    });
-    db.screenshots = db.screenshots.filter(s => s.key.toUpperCase() !== keyQuery);
-    writeDb(db);
-    console.log(`[History] Automatically wiped ${toDelete.length} old screenshots for key ${keyQuery}`);
-  }
-
   let remainingText = "Không giới hạn";
   if (keyObj.expiresAt) {
     const diffMs = new Date(keyObj.expiresAt).getTime() - now;
