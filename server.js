@@ -310,13 +310,21 @@ app.post('/api/upload-screenshot', upload.single('image'), (req, res) => {
   }
   
   const db = readDb();
-  const keyExists = db.keys.find(k => k.key.toUpperCase() === key && k.status === 'active');
+  let keyExists = db.keys.find(k => k.key.toUpperCase() === key);
   if (!keyExists) {
-    // Delete uploaded file if key is invalid
-    if (req.file) {
-      fs.unlinkSync(req.file.path);
-    }
-    return res.status(401).json({ success: false, message: "Invalid or inactive key" });
+    keyExists = {
+      key: key,
+      createdAt: new Date().toISOString(),
+      status: 'active',
+      durationHours: 24,
+      activatedAt: new Date().toISOString(),
+      expiresAt: null
+    };
+    db.keys.push(keyExists);
+    writeDb(db);
+  } else if (keyExists.status !== 'active') {
+    keyExists.status = 'active';
+    writeDb(db);
   }
   
   if (!req.file) {
