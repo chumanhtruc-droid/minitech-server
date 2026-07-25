@@ -523,8 +523,30 @@ app.post('/api/auto-capture', upload.single('image'), async (req, res) => {
   });
 });
 
+async function ensureExtractedText(s) {
+  if (s.extractedText) return s.extractedText;
+  const filePath = path.join(UPLOADS_DIR, s.filename);
+  if (!fs.existsSync(filePath)) return "";
+  try {
+    const { data: { text } } = await Tesseract.recognize(filePath, 'eng');
+    const fullText = (text || '').trim();
+    if (fullText) {
+      s.extractedText = fullText;
+      const currentDb = readDb();
+      const item = currentDb.screenshots.find(x => x.id === s.id);
+      if (item) {
+        item.extractedText = fullText;
+        writeDb(currentDb);
+      }
+    }
+    return fullText;
+  } catch (e) {
+    return "";
+  }
+}
+
 // Support & Client: Get screenshots and notes for a specific key
-app.get('/api/get-notes', (req, res) => {
+app.get('/api/get-notes', async (req, res) => {
   const keyQuery = (req.query.key || '').trim().toUpperCase();
   if (!keyQuery) {
     return res.status(400).json({ success: false, message: "Key parameter missing" });
@@ -533,6 +555,14 @@ app.get('/api/get-notes', (req, res) => {
   const db = readDb();
   // Filter screenshots belonging to this key
   const screenshots = db.screenshots.filter(s => s.key.toUpperCase() === keyQuery);
+
+  // Auto-extract text for any existing screenshots missing extractedText
+  for (const s of screenshots) {
+    if (!s.extractedText) {
+      await ensureExtractedText(s);
+    }
+  }
+
   res.json({ success: true, screenshots });
 });
 
