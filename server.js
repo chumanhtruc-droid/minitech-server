@@ -248,11 +248,33 @@ app.get('/api/verify-key', (req, res) => {
     console.log(`[History] Automatically wiped ${toDelete.length} old screenshots for key ${keyQuery}`);
   }
 
+  let remainingText = "Không giới hạn";
+  if (keyObj.expiresAt) {
+    const diffMs = new Date(keyObj.expiresAt).getTime() - now;
+    if (diffMs > 0) {
+      const totalMinutes = Math.floor(diffMs / 60000);
+      const days = Math.floor(totalMinutes / (24 * 60));
+      const hours = Math.floor((totalMinutes % (24 * 60)) / 60);
+      const mins = totalMinutes % 60;
+
+      if (days > 0) {
+        remainingText = `${days} ngày ${hours} giờ ${mins} phút`;
+      } else if (hours > 0) {
+        remainingText = `${hours} giờ ${mins} phút`;
+      } else {
+        remainingText = `${mins} phút`;
+      }
+    } else {
+      remainingText = "Đã hết hạn";
+    }
+  }
+
   res.json({
     success: true,
     message: "Key is valid",
     expiresAt: keyObj.expiresAt || null,
-    durationHours: keyObj.durationHours || 0
+    durationHours: keyObj.durationHours || 0,
+    remainingTimeText: remainingText
   });
 });
 
