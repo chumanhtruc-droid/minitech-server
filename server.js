@@ -395,7 +395,7 @@ app.post('/api/upload-screenshot', upload.single('image'), (req, res) => {
     });
 });
 
-// Calculate image difference ratio between two files (0.0 to 1.0)
+// Calculate image difference ratio between two JPEG files (skipping static metadata headers)
 function calculateImageDiff(path1, path2) {
   try {
     if (!fs.existsSync(path1) || !fs.existsSync(path2)) return 1.0;
@@ -403,19 +403,25 @@ function calculateImageDiff(path1, path2) {
     const buf2 = fs.readFileSync(path2);
     if (buf1.length === 0 || buf2.length === 0) return 1.0;
 
-    const step1 = Math.max(1, Math.floor(buf1.length / 500));
-    const step2 = Math.max(1, Math.floor(buf2.length / 500));
-    let diffCount = 0;
-    let totalSamples = 500;
+    // Skip JPEG headers (first ~3000 bytes) to compare actual scan payload
+    const start1 = Math.min(3000, Math.floor(buf1.length * 0.15));
+    const start2 = Math.min(3000, Math.floor(buf2.length * 0.15));
+    const len1 = Math.max(10, buf1.length - start1 - 500);
+    const len2 = Math.max(10, buf2.length - start2 - 500);
 
-    for (let i = 0; i < totalSamples; i++) {
-      const idx1 = Math.min(buf1.length - 1, i * step1);
-      const idx2 = Math.min(buf2.length - 1, i * step2);
-      if (Math.abs(buf1[idx1] - buf2[idx2]) > 30) {
+    const samples = 300;
+    const step1 = Math.max(1, Math.floor(len1 / samples));
+    const step2 = Math.max(1, Math.floor(len2 / samples));
+    
+    let diffCount = 0;
+    for (let i = 0; i < samples; i++) {
+      const b1 = buf1[start1 + i * step1];
+      const b2 = buf2[start2 + i * step2];
+      if (Math.abs(b1 - b2) > 25) {
         diffCount++;
       }
     }
-    return diffCount / totalSamples;
+    return diffCount / samples;
   } catch (e) {
     return 1.0;
   }
