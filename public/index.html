@@ -1063,32 +1063,41 @@
 
     function renderKeys() {
       const tbody = document.getElementById('keys-tbody');
+      if (!tbody) return;
       tbody.innerHTML = '';
 
-      if (keysList.length === 0) {
+      if (!keysList || keysList.length === 0) {
         tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: var(--text-secondary); padding: 2rem;">Chưa có key nào được tạo.</td></tr>';
         return;
       }
 
-      keysList.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+      keysList.sort((a, b) => {
+        const dA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const dB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return dB - dA;
+      });
 
       keysList.forEach(k => {
-        const row = document.createElement('tr');
-        row.id = `key-row-${k.key}`;
-        const isExpired = k.status === 'expired' || (k.expiresAt && Date.now() > new Date(k.expiresAt).getTime());
-        const notActivated = k.durationHours > 0 && !k.activatedAt;
+        try {
+          const row = document.createElement('tr');
+          row.id = `key-row-${k.key}`;
+          const isExpired = k.status === 'expired' || (k.expiresAt && Date.now() > new Date(k.expiresAt).getTime());
+          const notActivated = k.durationHours > 0 && !k.activatedAt;
 
-        row.innerHTML = `
-          <td style="font-family: monospace; font-weight: 600;">${k.key}</td>
-          <td>${formatDuration(k.durationHours)}</td>
-          <td id="countdown-${k.key}">${notActivated ? '<span style="color:var(--text-secondary);">⏸ Chưa kích hoạt</span>' : formatCountdown(k.expiresAt)}</td>
-          <td><span class="badge ${isExpired ? 'badge-danger' : 'badge-success'}">${isExpired ? 'expired' : k.status}</span></td>
-          <td style="text-align: right;">
-            <button class="btn btn-secondary" style="padding: 0.4rem 0.75rem; font-size: 0.75rem; margin-right: 0.5rem;" onclick="selectSupportKey('${k.key}')">Support</button>
-            <button class="btn btn-danger" style="padding: 0.4rem 0.75rem; font-size: 0.75rem;" onclick="deleteKey('${k.key}')">Xóa</button>
-          </td>
-        `;
-        tbody.appendChild(row);
+          row.innerHTML = `
+            <td style="font-family: monospace; font-weight: 600;">${k.key}</td>
+            <td>${formatDuration(k.durationHours)}</td>
+            <td id="countdown-${k.key}">${notActivated ? '<span style="color:var(--text-secondary);">⏸ Chưa kích hoạt</span>' : formatCountdown(k.expiresAt)}</td>
+            <td><span class="badge ${isExpired ? 'badge-danger' : 'badge-success'}">${isExpired ? 'expired' : k.status}</span></td>
+            <td style="text-align: right;">
+              <button class="btn btn-secondary" style="padding: 0.4rem 0.75rem; font-size: 0.75rem; margin-right: 0.5rem;" onclick="selectSupportKey('${k.key}')">Support</button>
+              <button class="btn btn-danger" style="padding: 0.4rem 0.75rem; font-size: 0.75rem;" onclick="deleteKey('${k.key}')">Xóa</button>
+            </td>
+          `;
+          tbody.appendChild(row);
+        } catch (err) {
+          console.error("Key row render error:", err);
+        }
       });
     }
 
