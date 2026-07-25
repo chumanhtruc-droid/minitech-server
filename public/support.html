@@ -537,10 +537,13 @@
           if (knownScreenshotIds.size > 0 && !knownScreenshotIds.has(s.id)) newArrived = true;
           knownScreenshotIds.add(s.id);
         } else {
-          ['A','B','C','D','E'].forEach(ans => {
-            const btn = document.getElementById(`ans-${s.id}-${ans}`);
-            if (btn) { if (s.answer===ans) btn.classList.add('active'); else btn.classList.remove('active'); }
-          });
+          const ocrEl = document.getElementById(`ocr-text-${s.id}`);
+          if (ocrEl) {
+            const newOcrContent = s.extractedText ? escapeHtml(s.extractedText) : '<span style="color:var(--text-secondary);font-style:italic;">Đang nhận diện nội dung câu hỏi & đáp án...</span>';
+            if (ocrEl.innerHTML !== newOcrContent) {
+              ocrEl.innerHTML = newOcrContent;
+            }
+          }
           const qi = document.getElementById(`quest-${s.id}`);
           if (qi && document.activeElement !== qi && qi.value !== (s.question||'')) qi.value = s.question||'';
           const ta = document.getElementById(`note-${s.id}`);
