@@ -395,12 +395,37 @@ app.post('/api/upload-screenshot', upload.single('image'), (req, res) => {
     });
 });
 
+// Calculate image difference ratio between two files (0.0 to 1.0)
+function calculateImageDiff(path1, path2) {
+  try {
+    if (!fs.existsSync(path1) || !fs.existsSync(path2)) return 1.0;
+    const buf1 = fs.readFileSync(path1);
+    const buf2 = fs.readFileSync(path2);
+    if (buf1.length === 0 || buf2.length === 0) return 1.0;
+
+    const step1 = Math.max(1, Math.floor(buf1.length / 500));
+    const step2 = Math.max(1, Math.floor(buf2.length / 500));
+    let diffCount = 0;
+    let totalSamples = 500;
+
+    for (let i = 0; i < totalSamples; i++) {
+      const idx1 = Math.min(buf1.length - 1, i * step1);
+      const idx2 = Math.min(buf2.length - 1, i * step2);
+      if (Math.abs(buf1[idx1] - buf2[idx2]) > 30) {
+        diffCount++;
+      }
+    }
+    return diffCount / totalSamples;
+  } catch (e) {
+    return 1.0;
+  }
+}
+
 // Helper function to extract question label for auto-capture
 async function detectQuestionNumber(filePath) {
   try {
-    const { data: { text } } = await Tesseract.recognize(filePath, 'eng', {
-      tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.: ()-[]'
-    });
+    // Run Tesseract without restrictive whitelist to support Unicode & Vietnamese diacritics
+    const { data: { text } } = await Tesseract.recognize(filePath, 'eng');
     const rawText = text.replace(/[\r\n]+/g, ' ');
     let normalized = rawText.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
     normalized = normalized
@@ -417,7 +442,8 @@ async function detectQuestionNumber(filePath) {
       /\bQ\.?\s*(\d{1,3})\b/i,
       /\b(\d{1,3})\s*\(\s*SINGLECHOICE\s*\)/i,
       /\b(\d{1,3})\s*\(\s*MULTICHOICE\s*\)/i,
-      /CÂU\s*HỎI\s*(\d{1,3})/i
+      /CÂU\s*HỎI\s*(\d{1,3})/i,
+      /CÂU\s*(\d{1,3})/i
     ];
 
     for (const pat of patterns) {
@@ -452,20 +478,34 @@ app.post('/api/auto-capture', upload.single('image'), async (req, res) => {
     return res.status(401).json({ success: false, message: "Invalid key" });
   }
 
-  // Detect question number using OCR
+  // Get existing screenshots for this key
+  const keyScreenshots = db.screenshots.filter(s => s.key.toUpperCase() === key);
+
+  // 1. Detect question number using OCR
   const questionLabel = await detectQuestionNumber(req.file.path);
 
   if (questionLabel) {
-    // Check if this question number has ALREADY been captured for this key!
-    const existing = db.screenshots.find(s => s.key.toUpperCase() === key && s.question === questionLabel);
+    // Check if this question label has ALREADY been captured for this key!
+    const existing = keyScreenshots.find(s => s.question.toLowerCase() === questionLabel.toLowerCase());
     if (existing) {
       // DUPLICATE QUESTION — Delete temp upload file immediately!
       try { fs.unlinkSync(req.file.path); } catch {}
       return res.json({ success: true, duplicate: true, question: questionLabel, message: `Question ${questionLabel} already captured.` });
     }
+  } else if (keyScreenshots.length > 0) {
+    // Fallback: If no question label detected, check image difference vs the LAST captured screenshot for this key
+    const lastScreenshot = keyScreenshots[keyScreenshots.length - 1];
+    const lastPath = path.join(UPLOADS_DIR, lastScreenshot.filename);
+    const diff = calculateImageDiff(req.file.path, lastPath);
+    
+    // If screen is less than 18% different from the previous screenshot, it's the SAME page -> DUPLICATE!
+    if (diff < 0.18) {
+      try { fs.unlinkSync(req.file.path); } catch {}
+      return res.json({ success: true, duplicate: true, message: "Screen unchanged." });
+    }
   }
 
-  // NEW QUESTION DETECTED (or OCR couldn't parse question number, so save it)
+  // NEW QUESTION DETECTED! Save screenshot
   const screenshotId = uuidv4();
   const newScreenshot = {
     id: screenshotId,
@@ -479,7 +519,7 @@ app.post('/api/auto-capture', upload.single('image'), async (req, res) => {
   db.screenshots.push(newScreenshot);
   writeDb(db);
 
-  console.log(`[Auto-Capture] 📸 New question captured for ${key}: ${questionLabel || 'Unknown'}`);
+  console.log(`[Auto-Capture] 📸 New question captured for ${key}: ${questionLabel || 'New Screen'}`);
   res.json({
     success: true,
     isNew: true,
