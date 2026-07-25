@@ -319,75 +319,62 @@ app.post('/api/upload-screenshot', upload.single('image'), (req, res) => {
     message: "Screenshot uploaded successfully"
   });
 
-  // Background OCR to auto-detect question number with enhanced pattern matching & typo resilience
+  // Background OCR to extract full text & auto-detect question number
   const filePath = req.file.path;
-  Tesseract.recognize(filePath, 'eng', {
-    tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.: ()-[]'
-  })
+  Tesseract.recognize(filePath, 'eng')
     .then(({ data: { text } }) => {
-      const rawText = text.replace(/[\r\n]+/g, ' ');
-      console.log('[OCR] Raw text:', rawText.substring(0, 400));
+      const fullText = (text || '').trim();
+      const rawText = fullText.replace(/[\r\n]+/g, ' ');
+      console.log('[OCR] Extracted text length:', fullText.length);
 
-      // Normalize string: uppercase and strip diacritics
-      let normalized = rawText.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
-      
-      // Fix common OCR typos for letter/number confusions near question labels
-      // e.g. "CAU HOI IO" -> "CAU HOI 10", "CAU HOI S" -> "CAU HOI 5", "CAU O1" -> "CAU 01"
-      normalized = normalized
-        .replace(/\bCAU\s*HOI\b/g, 'CAU HOI')
-        .replace(/CAU\s+HOI\s+([I|l|O|S|B|Z]+)\b/gi, (m, g1) => {
-          let numStr = g1.replace(/I|l/gi, '1').replace(/O/gi, '0').replace(/S/gi, '5').replace(/B/gi, '8').replace(/Z/gi, '2');
-          return `CAU HOI ${numStr}`;
-        });
+      const currentDb = readDb();
+      const s = currentDb.screenshots.find(item => item.id === screenshotId);
+      if (s) {
+        s.extractedText = fullText; // Store full extracted text for support UI!
+        
+        // Normalize string: uppercase and strip diacritics
+        let normalized = rawText.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+        
+        // Fix common OCR typos for letter/number confusions near question labels
+        normalized = normalized
+          .replace(/\bCAU\s*HOI\b/g, 'CAU HOI')
+          .replace(/CAU\s+HOI\s+([I|l|O|S|B|Z]+)\b/gi, (m, g1) => {
+            let numStr = g1.replace(/I|l/gi, '1').replace(/O/gi, '0').replace(/S/gi, '5').replace(/B/gi, '8').replace(/Z/gi, '2');
+            return `CAU HOI ${numStr}`;
+          });
 
-      console.log('[OCR] Processed text:', normalized.substring(0, 300));
+        const patterns = [
+          /(?:C[A-Z0-9]{1,2}U\s*H[A-Z0-9]{1,3}I|C[A-Z0-9]{3,5}HOI)\s*[:.-]?\s*(\d{1,3})/i,
+          /C[A-Z0-9]{1,2}U\s*[:.-]?\s*(\d{1,3})/i,
+          /QUEST(?:ION)?\s*[:.-]?\s*(\d{1,3})/i,
+          /\bQ\.?\s*(\d{1,3})\b/i,
+          /\b(\d{1,3})\s*\(\s*SINGLECHOICE\s*\)/i,
+          /\b(\d{1,3})\s*\(\s*MULTICHOICE\s*\)/i,
+          /CÂU\s*HỎI\s*(\d{1,3})/i
+        ];
 
-      // Flexible patterns covering standard and misread variants:
-      // 1. "CAU HOI 10", "CÂU HỎI 10", "CAU HOI10", "CAUHOI 10", "CAU H0I 10"
-      // 2. "CAU 10", "CÂU 10", "CAU10"
-      // 3. "QUESTION 10", "QUEST 10"
-      // 4. "Q 10", "Q. 10", "Q10"
-      // 5. Standalone leading numbers like "10 (SINGLECHOICE)" or "10."
-      const patterns = [
-        /(?:C[A-Z0-9]{1,2}U\s*H[A-Z0-9]{1,3}I|C[A-Z0-9]{3,5}HOI)\s*[:.-]?\s*(\d{1,3})/i,
-        /C[A-Z0-9]{1,2}U\s*[:.-]?\s*(\d{1,3})/i,
-        /QUEST(?:ION)?\s*[:.-]?\s*(\d{1,3})/i,
-        /\bQ\.?\s*(\d{1,3})\b/i,
-        /\b(\d{1,3})\s*\(\s*SINGLECHOICE\s*\)/i,
-        /\b(\d{1,3})\s*\(\s*MULTICHOICE\s*\)/i,
-        /CÂU\s*HỎI\s*(\d{1,3})/i
-      ];
-
-      let questionNum = null;
-      for (const pat of patterns) {
-        const m = normalized.match(pat);
-        if (m) {
-          questionNum = parseInt(m[1], 10);
-          break;
+        let questionNum = null;
+        for (const pat of patterns) {
+          const m = normalized.match(pat);
+          if (m) {
+            questionNum = parseInt(m[1], 10);
+            break;
+          }
         }
-      }
 
-      // Secondary fallback: look for raw text matches directly if normalization stripped something
-      if (questionNum === null) {
-        const rawMatch = rawText.match(/(?:câ|câ|cau|c[aâ]u)\s*(?:hỏi|hoi)?\s*[:.-]?\s*(\d{1,3})/i);
-        if (rawMatch) {
-          questionNum = parseInt(rawMatch[1], 10);
+        if (questionNum === null) {
+          const rawMatch = rawText.match(/(?:câ|câ|cau|c[aâ]u)\s*(?:hỏi|hoi)?\s*[:.-]?\s*(\d{1,3})/i);
+          if (rawMatch) {
+            questionNum = parseInt(rawMatch[1], 10);
+          }
         }
-      }
 
-      if (questionNum !== null && !isNaN(questionNum)) {
-        const currentDb = readDb();
-        const s = currentDb.screenshots.find(item => item.id === screenshotId);
-      if (questionNum !== null && !isNaN(questionNum)) {
-        const currentDb = readDb();
-        const s = currentDb.screenshots.find(item => item.id === screenshotId);
-        if (s) {
+        if (questionNum !== null && !isNaN(questionNum)) {
           s.question = `Câu ${questionNum}`;
-          writeDb(currentDb);
           console.log(`[OCR] ✅ Auto-detected: Câu ${questionNum} for screenshot ${screenshotId}`);
         }
-      } else {
-        console.log('[OCR] ❌ No question number found. Sample:', normalized.substring(0, 150));
+
+        writeDb(currentDb);
       }
     })
     .catch(err => {

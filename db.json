@@ -1,1 +1,29 @@
-﻿{ "keys": [], "screenshots": [] }
+{
+  "keys": [
+    {
+      "key": "MINITECH-1B0A-9BFE-7FFD",
+      "createdAt": "2026-07-24T17:31:29.835Z",
+      "status": "active",
+      "durationHours": 0,
+      "activatedAt": null,
+      "expiresAt": null
+    },
+    {
+      "key": "MINITECH-7F62-2270-EA6F",
+      "createdAt": "2026-07-24T17:42:31.515Z",
+      "status": "active",
+      "durationHours": 0,
+      "activatedAt": null,
+      "expiresAt": null
+    },
+    {
+      "key": "MINITECH-4F8E-B3EE-32D1",
+      "createdAt": "2026-07-24T17:49:34.478Z",
+      "status": "active",
+      "durationHours": 0,
+      "activatedAt": null,
+      "expiresAt": null
+    }
+  ],
+  "screenshots": []
+}
