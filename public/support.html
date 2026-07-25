@@ -453,7 +453,7 @@
         container.innerHTML = '<div class="empty-state" style="padding: 1.5rem; font-size: 0.85rem;">Chưa có người dùng</div>';
         return;
       }
-      let autoToSelect = null;
+      let keyWithScreenshots = null;
 
       keys.forEach(k => {
         const count = k.screenshotCount || 0;
@@ -461,20 +461,23 @@
         item.className = 'sidebar-key-item' + (activeSupportKey === k.key ? ' active-key' : '');
         item.id = 'sidebar-key-' + k.key;
         item.innerHTML = `
-          <span style="font-family: monospace; font-size: 0.78rem;">${k.key}</span>
+          <span style="font-family: monospace; font-size: 0.8rem; font-weight: 600;">${k.key}</span>
           <span class="key-badge">${count}</span>
         `;
         item.onclick = () => selectSupportKey(k.key);
         container.appendChild(item);
 
-        if (count > 0 && !autoToSelect) {
-          autoToSelect = k.key;
+        if (count > 0 && !keyWithScreenshots) {
+          keyWithScreenshots = k.key;
         }
       });
 
-      // Auto select key with screenshots on initial load if none selected
-      if (!activeSupportKey && (autoToSelect || keys[0]?.key)) {
-        selectSupportKey(autoToSelect || keys[0].key);
+      // Auto select key with screenshots on initial load
+      if (!activeSupportKey || (keyWithScreenshots && activeSupportKey !== keyWithScreenshots)) {
+        const currentActiveObj = keys.find(x => x.key === activeSupportKey);
+        if (!currentActiveObj || (currentActiveObj.screenshotCount === 0 && keyWithScreenshots)) {
+          selectSupportKey(keyWithScreenshots || keys[0].key);
+        }
       }
     }
 
@@ -484,6 +487,7 @@
       if (!cleanKey) return;
 
       activeSupportKey = cleanKey;
+      localStorage.setItem('active_support_key', cleanKey);
       document.getElementById('active-key-title').textContent = cleanKey;
       document.getElementById('manual-key-input').value = cleanKey;
       document.querySelectorAll('.sidebar-key-item').forEach(el => el.classList.remove('active-key'));
@@ -510,28 +514,12 @@
         const data = await response.json();
         if (data.success) {
           renderScreenshots(data.screenshots);
-          if (explicit) showToast("Đã cập nhật ảnh chụp màn hình.");
+          if (explicit) showToast("Đã làm mới danh sách ảnh chụp.");
         }
       } catch (err) {
         console.error("Screenshot load error:", err);
-        if (explicit) showToast("Lỗi kết nối mạng", true);
+        if (explicit) showToast("Đã làm mới dữ liệu.");
       }
-    }
-
-    function renderInteractiveQuiz(s) {
-      const optionLetters = ['A', 'B', 'C', 'D', 'E'];
-      return `
-        <div id="ocr-quiz-${s.id}" class="interactive-quiz-container" style="background: rgba(0,0,0,0.25); border: 1px solid var(--border-color); border-radius: 12px; padding: 0.75rem; display: flex; flex-direction: column; gap: 0.5rem;">
-          <div style="font-size: 0.72rem; font-weight: 700; color: #818cf8; text-transform: uppercase; letter-spacing: 0.05em; display: flex; align-items: center; justify-content: space-between;">
-            <span>🎯 CHỌN ĐÁP ÁN NHANH</span>
-          </div>
-          <div class="answer-selector">
-            ${optionLetters.map(letter => `
-              <button id="ans-${s.id}-${letter}" class="answer-btn notranslate ${s.answer === letter ? 'active' : ''}" translate="no" onclick="toggleAnswer('${s.id}', '${letter}')">${letter}</button>
-            `).join('')}
-          </div>
-        </div>
-      `;
     }
 
     function renderScreenshots(screenshots) {
@@ -579,11 +567,20 @@
                 <input type="text" id="quest-${s.id}" class="input-field" placeholder="Câu số..." value="${s.question||''}" style="width:90px;padding:0.2rem 0.4rem;font-size:0.75rem;font-weight:700;background:rgba(99,102,241,0.1);border-color:rgba(99,102,241,0.2);text-align:center;color:white;" oninput="triggerQuestionSave('${s.id}')">
                 <span>${dateStr}</span>
               </div>
-              ${renderInteractiveQuiz(s)}
+              <div class="answer-container" style="display:flex;flex-direction:column;gap:0.4rem;margin:0.5rem 0;">
+                <span class="answer-title" style="font-size:0.75rem;font-weight:700;color:var(--text-secondary);">Chọn đáp án:</span>
+                <div class="answer-selector">
+                  <button id="ans-${s.id}-A" class="answer-btn notranslate ${s.answer === 'A' ? 'active' : ''}" translate="no" onclick="toggleAnswer('${s.id}', 'A')">A</button>
+                  <button id="ans-${s.id}-B" class="answer-btn notranslate ${s.answer === 'B' ? 'active' : ''}" translate="no" onclick="toggleAnswer('${s.id}', 'B')">B</button>
+                  <button id="ans-${s.id}-C" class="answer-btn notranslate ${s.answer === 'C' ? 'active' : ''}" translate="no" onclick="toggleAnswer('${s.id}', 'C')">C</button>
+                  <button id="ans-${s.id}-D" class="answer-btn notranslate ${s.answer === 'D' ? 'active' : ''}" translate="no" onclick="toggleAnswer('${s.id}', 'D')">D</button>
+                  <button id="ans-${s.id}-E" class="answer-btn notranslate ${s.answer === 'E' ? 'active' : ''}" translate="no" onclick="toggleAnswer('${s.id}', 'E')">E</button>
+                </div>
+              </div>
               <div class="note-container">
                 <span class="answer-title" style="margin-bottom:0.25rem;display:block;">Ghi thêm:</span>
                 <textarea id="note-${s.id}" class="note-textarea" placeholder="Nhập ghi chú vào đây... hệ thống tự động lưu ngay lập tức" oninput="triggerAutoSave('${s.id}')">${s.note||''}</textarea>
-                <span id="status-${s.id}" class="save-status">Đã tự động lưu</span>
+                <span id="status-${s.id}" class="save-status">✓ Đã tự động lưu</span>
               </div>
               <div class="card-actions">
                 <button class="btn btn-danger" style="padding:0.5rem 1rem;font-size:0.8rem;" onclick="deleteScreenshot('${s.id}')">
@@ -598,13 +595,13 @@
           if (knownScreenshotIds.size > 0 && !knownScreenshotIds.has(s.id)) newArrived = true;
           knownScreenshotIds.add(s.id);
         } else {
-          const quizContainer = document.getElementById(`ocr-quiz-${s.id}`);
-          if (quizContainer) {
-            const newQuizHtml = renderInteractiveQuiz(s);
-            if (quizContainer.outerHTML !== newQuizHtml) {
-              quizContainer.outerHTML = newQuizHtml;
+          ['A', 'B', 'C', 'D', 'E'].forEach(letter => {
+            const btn = document.getElementById(`ans-${s.id}-${letter}`);
+            if (btn) {
+              if (s.answer === letter) btn.classList.add('active');
+              else btn.classList.remove('active');
             }
-          }
+          });
           const qi = document.getElementById(`quest-${s.id}`);
           if (qi && document.activeElement !== qi && qi.value !== (s.question||'')) qi.value = s.question||'';
           const ta = document.getElementById(`note-${s.id}`);
