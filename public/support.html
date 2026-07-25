@@ -1,0 +1,623 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bảng hỗ trợ Minitech</title>
+  <meta name="description" content="Support panel for monitoring and assisting active users">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  
+  <style>
+    :root {
+      --bg-primary: #0b0f19;
+      --bg-secondary: rgba(17, 24, 39, 0.7);
+      --border-color: rgba(255, 255, 255, 0.08);
+      --text-primary: #f3f4f6;
+      --text-secondary: #9ca3af;
+      --accent-color: #6366f1;
+      --accent-glow: rgba(99, 102, 241, 0.15);
+      --success-color: #10b981;
+      --danger-color: #ef4444;
+      --glass-bg: rgba(255, 255, 255, 0.03);
+      --glass-blur: blur(12px);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      min-height: 100vh;
+      background-image: radial-gradient(ellipse at 20% 50%, rgba(99, 102, 241, 0.06) 0%, transparent 50%),
+                        radial-gradient(ellipse at 80% 20%, rgba(139, 92, 246, 0.06) 0%, transparent 50%);
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 1rem 2rem;
+      background: rgba(11, 15, 25, 0.95);
+      border-bottom: 1px solid var(--border-color);
+      backdrop-filter: var(--glass-blur);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    .logo-container { display: flex; align-items: center; gap: 0.75rem; }
+    .logo-icon {
+      width: 36px; height: 36px;
+      background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+      border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1rem; font-weight: 800; color: white;
+      box-shadow: 0 0 20px rgba(99, 102, 241, 0.35);
+    }
+    header h1 { font-size: 1.1rem; font-weight: 700; }
+
+    .support-badge {
+      background: rgba(16, 185, 129, 0.12);
+      border: 1px solid rgba(16, 185, 129, 0.25);
+      color: #10b981;
+      padding: 0.3rem 0.85rem;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+    }
+
+    main { padding: 1.5rem 2rem; }
+
+    .support-layout {
+      display: grid;
+      grid-template-columns: 220px 1fr;
+      gap: 1.5rem;
+      align-items: start;
+    }
+
+    .card {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: 16px;
+      padding: 1.5rem;
+      backdrop-filter: var(--glass-blur);
+    }
+
+    .support-sidebar { padding: 1.25rem; }
+    .sidebar-title {
+      font-size: 0.7rem; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.08em; color: var(--text-secondary);
+      margin-bottom: 0.75rem;
+    }
+    .sidebar-list { display: flex; flex-direction: column; gap: 0.4rem; min-height: 120px; }
+    .sidebar-key-item {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0.6rem 0.85rem; border-radius: 10px; cursor: pointer;
+      transition: all 0.15s ease;
+      border: 1px solid transparent;
+      font-size: 0.8rem; font-weight: 500;
+    }
+    .sidebar-key-item:hover { background: rgba(99,102,241,0.08); border-color: rgba(99,102,241,0.15); }
+    .sidebar-key-item.active-key {
+      background: rgba(99,102,241,0.12); border-color: rgba(99,102,241,0.25); color: #a5b4fc;
+    }
+    .key-badge {
+      background: var(--accent-color); color: white;
+      font-size: 0.65rem; font-weight: 700;
+      padding: 0.1rem 0.45rem; border-radius: 999px; min-width: 20px; text-align: center;
+    }
+    .pulse-dot {
+      width: 8px; height: 8px; background-color: var(--success-color);
+      border-radius: 50%; display: inline-block;
+      box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+      animation: pulse 1.5s infinite; margin-right: 0.5rem;
+    }
+    @keyframes pulse {
+      0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+      70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
+      100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+    }
+
+    .active-header {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 1rem; flex-wrap: wrap; margin-bottom: 1.25rem; padding: 1.25rem 1.5rem;
+    }
+
+    .screenshots-grid {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+      gap: 1.25rem;
+    }
+
+    .screenshot-card {
+      background: var(--bg-secondary); border: 1px solid var(--border-color);
+      border-radius: 16px; overflow: hidden; transition: all 0.3s ease;
+    }
+    .screenshot-card:hover { border-color: rgba(99,102,241,0.25); box-shadow: 0 4px 24px rgba(0,0,0,0.3); }
+
+    .image-container {
+      height: 220px; overflow: hidden; cursor: zoom-in; position: relative;
+      background: rgba(0,0,0,0.3);
+    }
+    .image-container img { width: 100%; height: 100%; object-fit: contain; transition: transform 0.3s ease; }
+    .image-container:hover img { transform: scale(1.02); }
+
+    .screenshot-info { padding: 1rem; display: flex; flex-direction: column; gap: 0.75rem; }
+    .screenshot-meta {
+      display: flex; align-items: center; justify-content: space-between;
+      font-size: 0.75rem; color: var(--text-secondary);
+    }
+
+    .answer-container { display: flex; flex-direction: column; gap: 0.4rem; }
+    .answer-title { font-size: 0.75rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em; }
+    .answer-selector { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+    .answer-btn {
+      width: 36px; height: 36px; border-radius: 50%;
+      border: 2px solid rgba(255,255,255,0.1);
+      background: transparent; color: var(--text-secondary);
+      font-size: 0.8rem; font-weight: 700; cursor: pointer; transition: all 0.15s ease;
+    }
+    .answer-btn:hover { border-color: var(--accent-color); color: var(--accent-color); background: rgba(99,102,241,0.08); }
+    .answer-btn.active { background: var(--accent-color); border-color: var(--accent-color); color: white; box-shadow: 0 0 12px rgba(99,102,241,0.4); }
+
+    .note-container { display: flex; flex-direction: column; gap: 0.35rem; }
+    .note-textarea {
+      width: 100%; min-height: 80px; padding: 0.75rem;
+      background: rgba(0,0,0,0.2); border: 1px solid var(--border-color);
+      border-radius: 10px; color: var(--text-primary); font-family: inherit; font-size: 0.85rem;
+      resize: vertical; transition: border-color 0.2s;
+    }
+    .note-textarea:focus { outline: none; border-color: var(--accent-color); box-shadow: 0 0 0 3px rgba(99,102,241,0.1); }
+    .save-status { font-size: 0.7rem; color: var(--success-color); display: flex; align-items: center; gap: 0.3rem; min-height: 16px; }
+
+    .input-field {
+      background: rgba(255,255,255,0.05); border: 1px solid var(--border-color);
+      border-radius: 8px; padding: 0.5rem 0.75rem;
+      color: var(--text-primary); font-family: inherit; font-size: 0.85rem; transition: all 0.2s;
+    }
+    .input-field:focus { outline: none; border-color: var(--accent-color); box-shadow: 0 0 0 3px rgba(99,102,241,0.1); }
+
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 0.4rem;
+      padding: 0.6rem 1.2rem; border-radius: 10px; font-size: 0.85rem; font-weight: 600;
+      cursor: pointer; border: none; transition: all 0.2s; font-family: inherit;
+    }
+    .btn-primary { background: linear-gradient(135deg, #6366f1, #8b5cf6); color: white; box-shadow: 0 4px 15px rgba(99,102,241,0.3); }
+    .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(99,102,241,0.4); }
+    .btn-secondary { background: rgba(255,255,255,0.07); color: var(--text-primary); border: 1px solid var(--border-color); }
+    .btn-secondary:hover { background: rgba(255,255,255,0.12); }
+    .btn-danger { background: rgba(239,68,68,0.12); color: #ef4444; border: 1px solid rgba(239,68,68,0.2); }
+    .btn-danger:hover { background: rgba(239,68,68,0.2); }
+
+    .card-actions { display: flex; justify-content: flex-end; }
+
+    .empty-state {
+      text-align: center; padding: 5rem 2rem; color: var(--text-secondary);
+      display: flex; flex-direction: column; align-items: center; gap: 1rem;
+      background: var(--bg-secondary); border: 1px dashed var(--border-color); border-radius: 16px;
+    }
+    .empty-icon { font-size: 3.5rem; opacity: 0.5; }
+
+    .toast {
+      position: fixed; bottom: 2rem; right: 2rem;
+      background: rgba(16, 185, 129, 0.9); color: white;
+      padding: 1rem 1.5rem; border-radius: 10px; font-weight: 600; font-size: 0.875rem;
+      box-shadow: 0 10px 30px rgba(16, 185, 129, 0.3);
+      transform: translateY(100px); opacity: 0; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); z-index: 2000;
+    }
+    .toast.active { transform: translateY(0); opacity: 1; }
+
+    /* Modal */
+    .modal-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.9); z-index: 1000;
+      display: flex; align-items: center; justify-content: center;
+      opacity: 0; pointer-events: none; transition: opacity 0.3s;
+    }
+    .modal-overlay.active { opacity: 1; pointer-events: all; }
+    .modal-overlay img { max-width: 92vw; max-height: 90vh; border-radius: 12px; box-shadow: 0 30px 80px rgba(0,0,0,0.7); }
+
+    /* MOBILE RESPONSIVE STYLES (Phones & Tablets) */
+    @media (max-width: 768px) {
+      header {
+        padding: 0.75rem 1rem;
+      }
+      header h1 {
+        font-size: 0.95rem;
+      }
+      .support-badge {
+        font-size: 0.65rem;
+        padding: 0.25rem 0.6rem;
+      }
+
+      main {
+        padding: 0.75rem 0.75rem 3rem;
+      }
+
+      .support-layout {
+        grid-template-columns: 1fr;
+        gap: 1rem;
+      }
+
+      .support-sidebar {
+        padding: 1rem;
+      }
+      .sidebar-list {
+        display: flex;
+        flex-direction: row;
+        overflow-x: auto;
+        gap: 0.5rem;
+        padding-bottom: 0.4rem;
+        min-height: auto;
+      }
+      .sidebar-key-item {
+        white-space: nowrap;
+        flex-shrink: 0;
+        padding: 0.5rem 0.75rem;
+      }
+
+      .support-header-card {
+        padding: 1rem !important;
+      }
+      .support-header-card > div {
+        flex-direction: column;
+        align-items: stretch !argument;
+        gap: 0.75rem;
+      }
+      
+      .preset-chips-container {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.4rem;
+      }
+      .preset-chip {
+        font-size: 0.8rem !important;
+        padding: 0.5rem 0.75rem !important;
+        min-height: 38px;
+        touch-action: manipulation;
+      }
+
+      .screenshots-container {
+        grid-template-columns: 1fr !important;
+        gap: 1rem !important;
+      }
+
+      /* Prevent iOS auto-zoom on input focus by keeping font-size >= 16px */
+      .note-textarea,
+      .input-field,
+      select {
+        font-size: 16px !important;
+      }
+
+      .btn {
+        min-height: 44px;
+        padding: 0.7rem 1rem;
+        touch-action: manipulation;
+      }
+
+      .toast {
+        left: 1rem;
+        right: 1rem;
+        bottom: 1rem;
+        text-align: center;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="logo-container">
+      <div class="logo-icon">M</div>
+      <h1>Minitech – Bảng hỗ trợ</h1>
+    </div>
+    <span class="support-badge">🎧 SUPPORT MODE</span>
+  </header>
+
+  <main>
+    <div class="support-layout">
+
+      <!-- Sidebar: Active Users -->
+      <div class="support-sidebar card">
+        <h3 class="sidebar-title">Người dùng hoạt động</h3>
+        <div id="active-keys-list" class="sidebar-list">
+          <div class="empty-state" style="padding: 1.5rem; font-size: 0.85rem;">
+            Chưa có người dùng
+          </div>
+        </div>
+        <div style="border-top: 1px solid var(--border-color); padding-top: 0.75rem; margin-top: 0.75rem; display: flex; align-items: center; justify-content: space-between; font-size: 0.8rem; color: var(--text-secondary);">
+          <span>Tự động làm mới: Đang hoạt động</span>
+          <div class="pulse-dot"></div>
+        </div>
+      </div>
+
+      <!-- Main Workspace -->
+      <div>
+        <!-- Header -->
+        <div id="support-active-header" class="card active-header" style="background: rgba(99,102,241,0.05); border-color: rgba(99,102,241,0.2);">
+          <div>
+            <div style="font-size: 0.75rem; font-weight: 700; text-transform: uppercase; color: var(--accent-color); letter-spacing: 0.05em;">Khóa người dùng hỗ trợ</div>
+            <h2 id="active-key-title" style="font-family: monospace; font-size: 1.35rem; margin-top: 0.25rem;">CHỌN NGƯỜI DÙNG TỪ SIDEBAR</h2>
+          </div>
+          <div style="display: flex; gap: 1rem; align-items: center;">
+            <input type="text" id="manual-key-input" class="input-field" placeholder="Nhập key thủ công..." style="width: 200px;" oninput="handleManualKeyInput()">
+            <button class="btn btn-secondary" onclick="loadSelectedScreenshots(true)">Làm mới</button>
+            <button id="download-zip-btn" class="btn btn-primary" onclick="downloadAllImages()">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              Tải xuống tệp ZIP
+            </button>
+          </div>
+        </div>
+
+        <!-- Screenshots Container -->
+        <div id="screenshots-container" class="screenshots-grid">
+          <div class="empty-state" style="grid-column: 1 / -1;">
+            <div class="empty-icon">📸</div>
+            <h3>Chọn người dùng từ sidebar để bắt đầu hỗ trợ</h3>
+            <p>Ảnh chụp màn hình sẽ hiện ra tại đây sau khi chọn.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Modal Preview -->
+  <div id="preview-modal" class="modal-overlay" onclick="closeModal()">
+    <img id="modal-img" src="" alt="Preview">
+  </div>
+
+  <div id="toast" class="toast">Đã lưu thành công</div>
+
+  <script>
+    const API_BASE = window.location.protocol.startsWith('http') ? '' : 'http://127.0.0.1:3000';
+    const originalFetch = window.fetch;
+    window.fetch = function(url, options) {
+      if (typeof url === 'string' && url.startsWith('/')) url = API_BASE + url;
+      return originalFetch(url, options);
+    };
+
+    let activeSupportKey = '';
+    let knownScreenshotIds = new Set();
+    let autoRefreshInterval = null;
+    let autoSaveTimeouts = {};
+    let autoSaveQuestionTimeouts = {};
+
+    function showToast(message, isError = false) {
+      const toast = document.getElementById('toast');
+      toast.innerText = message;
+      toast.style.background = isError ? 'var(--danger-color)' : 'var(--success-color)';
+      toast.style.boxShadow = isError ? '0 10px 30px rgba(239,68,68,0.3)' : '0 10px 30px rgba(16,185,129,0.3)';
+      toast.classList.add('active');
+      setTimeout(() => toast.classList.remove('active'), 3000);
+    }
+
+    async function loadKeysForSidebar() {
+      try {
+        const response = await fetch('/api/keys');
+        const data = await response.json();
+        if (data.success) renderSidebarKeys(data.keys);
+      } catch (err) { console.error("Sidebar load error:", err); }
+    }
+
+    function renderSidebarKeys(keys) {
+      const container = document.getElementById('active-keys-list');
+      container.innerHTML = '';
+      if (keys.length === 0) {
+        container.innerHTML = '<div class="empty-state" style="padding: 1.5rem; font-size: 0.85rem;">Chưa có người dùng</div>';
+        return;
+      }
+      keys.forEach(k => {
+        const count = k.screenshotCount || 0;
+        const item = document.createElement('div');
+        item.className = 'sidebar-key-item' + (activeSupportKey === k.key ? ' active-key' : '');
+        item.id = 'sidebar-key-' + k.key;
+        item.innerHTML = `
+          <span style="font-family: monospace; font-size: 0.78rem;">${k.key.substring(0, 12)}...</span>
+          <span class="key-badge">${count}</span>
+        `;
+        item.onclick = () => selectSupportKey(k.key);
+        container.appendChild(item);
+      });
+    }
+
+    function selectSupportKey(key) {
+      activeSupportKey = key;
+      document.getElementById('active-key-title').textContent = key;
+      document.getElementById('manual-key-input').value = key;
+      document.querySelectorAll('.sidebar-key-item').forEach(el => el.classList.remove('active-key'));
+      const el = document.getElementById('sidebar-key-' + key);
+      if (el) el.classList.add('active-key');
+      knownScreenshotIds.clear();
+      document.getElementById('screenshots-container').innerHTML = '';
+      loadSelectedScreenshots(false);
+    }
+
+    function handleManualKeyInput() {
+      const val = document.getElementById('manual-key-input').value.trim().toUpperCase();
+      if (val.length >= 5) selectSupportKey(val);
+    }
+
+    async function loadSelectedScreenshots(explicit = false) {
+      if (!activeSupportKey) return;
+      try {
+        const response = await fetch(`/api/get-notes?key=${encodeURIComponent(activeSupportKey)}`);
+        const data = await response.json();
+        if (data.success) {
+          renderScreenshots(data.screenshots);
+          if (explicit) showToast("Đã cập nhật ảnh chụp màn hình.");
+        }
+      } catch (err) {
+        console.error("Screenshot load error:", err);
+        if (explicit) showToast("Lỗi kết nối mạng", true);
+      }
+    }
+
+    function renderScreenshots(screenshots) {
+      const container = document.getElementById('screenshots-container');
+      if (screenshots.length === 0) {
+        container.innerHTML = `<div class="empty-state" style="grid-column: 1/-1;">
+          <div class="empty-icon">📸</div>
+          <h3>Chưa có ảnh chụp màn hình</h3>
+          <p>Ảnh từ ứng dụng client (Ctrl+X) sẽ hiện ra tại đây.</p>
+        </div>`;
+        knownScreenshotIds.clear();
+        return;
+      }
+      if (container.querySelector('.empty-state')) container.innerHTML = '';
+      screenshots.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+      const serverIds = new Set(screenshots.map(s => s.id));
+      container.querySelectorAll('.screenshot-card').forEach(card => {
+        if (!serverIds.has(card.id.replace('card-', ''))) {
+          card.style.transition = 'all 0.3s ease';
+          card.style.opacity = '0';
+          setTimeout(() => card.remove(), 300);
+        }
+      });
+
+      let newArrived = false;
+      screenshots.forEach((s, index) => {
+        const cardId = `card-${s.id}`;
+        let card = document.getElementById(cardId);
+        const dateStr = new Date(s.createdAt).toLocaleString();
+
+        if (!card) {
+          card = document.createElement('div');
+          card.className = 'screenshot-card';
+          card.id = cardId;
+          card.style.opacity = '0';
+          card.style.transform = 'translateY(15px)';
+          card.innerHTML = `
+            <div class="image-container" onclick="openModal(API_BASE+'/uploads/${s.filename}?v=${s.id}')">
+              <img src="${API_BASE}/uploads/${s.filename}?v=${s.id}" alt="Màn hình người dùng">
+            </div>
+            <div class="screenshot-info">
+              <div class="screenshot-meta" style="align-items:center;justify-content:space-between;">
+                <span>ID: ${s.id.substring(0,8)}</span>
+                <input type="text" id="quest-${s.id}" class="input-field" placeholder="Câu số..." value="${s.question||''}" style="width:90px;padding:0.2rem 0.4rem;font-size:0.75rem;font-weight:700;background:rgba(99,102,241,0.1);border-color:rgba(99,102,241,0.2);text-align:center;color:white;" oninput="triggerQuestionSave('${s.id}')">
+                <span>${dateStr}</span>
+              </div>
+              <div class="answer-container">
+                <span class="answer-title">Chọn đáp án:</span>
+                <div class="answer-selector">
+                  <button id="ans-${s.id}-A" class="answer-btn notranslate ${s.answer==='A'?'active':''}" translate="no" onclick="toggleAnswer('${s.id}','A')">A</button>
+                  <button id="ans-${s.id}-B" class="answer-btn notranslate ${s.answer==='B'?'active':''}" translate="no" onclick="toggleAnswer('${s.id}','B')">B</button>
+                  <button id="ans-${s.id}-C" class="answer-btn notranslate ${s.answer==='C'?'active':''}" translate="no" onclick="toggleAnswer('${s.id}','C')">C</button>
+                  <button id="ans-${s.id}-D" class="answer-btn notranslate ${s.answer==='D'?'active':''}" translate="no" onclick="toggleAnswer('${s.id}','D')">D</button>
+                  <button id="ans-${s.id}-E" class="answer-btn notranslate ${s.answer==='E'?'active':''}" translate="no" onclick="toggleAnswer('${s.id}','E')">E</button>
+                </div>
+              </div>
+              <div class="note-container">
+                <span class="answer-title" style="margin-bottom:0.25rem;display:block;">Ghi thêm:</span>
+                <textarea id="note-${s.id}" class="note-textarea" placeholder="Nhập ghi chú vào đây... hệ thống tự động lưu ngay lập tức" oninput="triggerAutoSave('${s.id}')">${s.note||''}</textarea>
+                <span id="status-${s.id}" class="save-status">Đã tự động lưu</span>
+              </div>
+              <div class="card-actions">
+                <button class="btn btn-danger" style="padding:0.5rem 1rem;font-size:0.8rem;" onclick="deleteScreenshot('${s.id}')">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                  Xóa bỏ
+                </button>
+              </div>
+            </div>`;
+          if (index === 0) container.insertBefore(card, container.firstChild);
+          else container.insertBefore(card, container.children[index]);
+          requestAnimationFrame(() => { card.style.transition = 'all 0.3s ease'; card.style.opacity = '1'; card.style.transform = 'translateY(0)'; });
+          if (knownScreenshotIds.size > 0 && !knownScreenshotIds.has(s.id)) newArrived = true;
+          knownScreenshotIds.add(s.id);
+        } else {
+          ['A','B','C','D','E'].forEach(ans => {
+            const btn = document.getElementById(`ans-${s.id}-${ans}`);
+            if (btn) { if (s.answer===ans) btn.classList.add('active'); else btn.classList.remove('active'); }
+          });
+          const qi = document.getElementById(`quest-${s.id}`);
+          if (qi && document.activeElement !== qi && qi.value !== (s.question||'')) qi.value = s.question||'';
+          const ta = document.getElementById(`note-${s.id}`);
+          if (ta && document.activeElement !== ta && ta.value !== s.note) ta.value = s.note||'';
+        }
+      });
+
+      if (newArrived) showToast("Có ảnh chụp màn hình mới!");
+    }
+
+    function triggerAutoSave(screenshotId) {
+      const textarea = document.getElementById(`note-${screenshotId}`);
+      const statusSpan = document.getElementById(`status-${screenshotId}`);
+      const noteText = textarea.value;
+      if (autoSaveTimeouts[screenshotId]) clearTimeout(autoSaveTimeouts[screenshotId]);
+      autoSaveTimeouts[screenshotId] = setTimeout(async () => {
+        try {
+          statusSpan.innerText = "Đang lưu...";
+          await fetch('/api/save-note', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ screenshotId, note: noteText })
+          });
+          statusSpan.innerText = "✓ Đã tự động lưu";
+          setTimeout(() => statusSpan.innerText = '', 1500);
+        } catch { statusSpan.innerText = "Lỗi lưu"; }
+      }, 600);
+    }
+
+    function triggerQuestionSave(screenshotId) {
+      const input = document.getElementById(`quest-${screenshotId}`);
+      if (autoSaveQuestionTimeouts[screenshotId]) clearTimeout(autoSaveQuestionTimeouts[screenshotId]);
+      autoSaveQuestionTimeouts[screenshotId] = setTimeout(async () => {
+        try {
+          await fetch('/api/save-note', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ screenshotId, question: input.value.trim() })
+          });
+        } catch { }
+      }, 600);
+    }
+
+    async function toggleAnswer(screenshotId, answerOption) {
+      const parent = document.querySelector(`#card-${screenshotId} .answer-selector`);
+      const buttons = parent.querySelectorAll('.answer-btn');
+      const clickedBtn = document.getElementById(`ans-${screenshotId}-${answerOption}`);
+      let finalAnswer = clickedBtn.classList.contains('active') ? '' : answerOption;
+      buttons.forEach(btn => { if (btn.id===`ans-${screenshotId}-${finalAnswer}`) btn.classList.add('active'); else btn.classList.remove('active'); });
+      try {
+        await fetch('/api/save-note', {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ screenshotId, answer: finalAnswer })
+        });
+      } catch { showToast("Lỗi lưu đáp án", true); }
+    }
+
+    function downloadAllImages() {
+      if (!activeSupportKey) { showToast("Vui lòng chọn người dùng trước", true); return; }
+      showToast("Đang chuẩn bị file ZIP...");
+      window.location.href = `${API_BASE}/api/download-all-images?key=${encodeURIComponent(activeSupportKey)}`;
+    }
+
+    async function deleteScreenshot(screenshotId) {
+      if (!confirm("Bạn có chắc muốn xóa ảnh này không?")) return;
+      try {
+        const response = await fetch('/api/delete-screenshot', {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ screenshotId })
+        });
+        const data = await response.json();
+        if (data.success) { showToast("Đã xóa ảnh."); loadSelectedScreenshots(false); }
+      } catch { console.error("Delete error"); }
+    }
+
+    function openModal(imgUrl) {
+      document.getElementById('modal-img').src = imgUrl;
+      document.getElementById('preview-modal').classList.add('active');
+    }
+    function closeModal() { document.getElementById('preview-modal').classList.remove('active'); }
+
+    // Auto-refresh every 5s
+    setInterval(() => {
+      loadKeysForSidebar();
+      if (activeSupportKey) loadSelectedScreenshots(false);
+    }, 5000);
+
+    // Initial load
+    loadKeysForSidebar();
+  </script>
+</body>
+</html>

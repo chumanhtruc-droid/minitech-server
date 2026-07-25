@@ -1,0 +1,519 @@
+const express = require('express');
+const cors = require('cors');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
+const { v4: uuidv4 } = require('uuid');
+const Tesseract = require('tesseract.js');
+const AdmZip = require('adm-zip');
+
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+// ── Auth config ─────────────────────────────────────────────
+const ADMIN_USERNAME = 'admin';
+const ADMIN_PASSWORD = '0934494823';
+const activeSessions = new Map(); // token → expiry timestamp
+const SESSION_TTL_MS = 8 * 60 * 60 * 1000; // 8 hours
+
+function createSession() {
+  const token = uuidv4();
+  activeSessions.set(token, Date.now() + SESSION_TTL_MS);
+  return token;
+}
+
+function isValidSession(token) {
+  if (!token || !activeSessions.has(token)) return false;
+  const expiry = activeSessions.get(token);
+  if (Date.now() > expiry) { activeSessions.delete(token); return false; }
+  return true;
+}
+
+function parseCookies(cookieHeader = '') {
+  const cookies = {};
+  cookieHeader.split(';').forEach(part => {
+    const [k, ...v] = part.trim().split('=');
+    if (k) cookies[k.trim()] = decodeURIComponent(v.join('=').trim());
+  });
+  return cookies;
+}
+
+function requireAdmin(req, res, next) {
+  const cookies = parseCookies(req.headers.cookie);
+  if (isValidSession(cookies.admin_token)) return next();
+  res.redirect('/login');
+}
+// ────────────────────────────────────────────────────────────
+
+app.use(cors());
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// Serve uploaded screenshots (public - clients need this)
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
+// Serve static files EXCEPT index.html for admin (we protect that)
+app.use(express.static(path.join(__dirname, 'public'), { index: false }));
+
+const DB_PATH = path.join(__dirname, 'db.json');
+const UPLOADS_DIR = path.join(__dirname, 'uploads');
+
+// Ensure database and upload folder exist
+if (!fs.existsSync(UPLOADS_DIR)) {
+  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+}
+
+function readDb() {
+  if (!fs.existsSync(DB_PATH)) {
+    const initialDb = { keys: [], screenshots: [] };
+    fs.writeFileSync(DB_PATH, JSON.stringify(initialDb, null, 2), 'utf-8');
+    return initialDb;
+  }
+  try {
+    const data = fs.readFileSync(DB_PATH, 'utf-8');
+    return JSON.parse(data);
+  } catch (err) {
+    console.error("Error reading database file, resetting:", err);
+    return { keys: [], screenshots: [] };
+  }
+}
+
+function writeDb(data) {
+  fs.writeFileSync(DB_PATH, JSON.stringify(data, null, 2), 'utf-8');
+}
+
+// Multer configuration for screenshot uploads
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, UPLOADS_DIR);
+  },
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname) || '.jpg';
+    cb(null, `screenshot_${Date.now()}_${uuidv4().substring(0, 8)}${ext}`);
+  }
+});
+
+const upload = multer({
+  storage: storage,
+  limits: { fileSize: 5 * 1024 * 1024 } // 5MB limit
+});
+
+// --- AUTH ROUTES ---
+
+// Serve login page
+app.get('/login', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'login.html'));
+});
+
+// Login API
+app.post('/api/login', (req, res) => {
+  const { username, password } = req.body;
+  if (username === ADMIN_USERNAME && password === ADMIN_PASSWORD) {
+    const token = createSession();
+    res.setHeader('Set-Cookie', `admin_token=${token}; HttpOnly; Path=/; Max-Age=28800; SameSite=Strict`);
+    return res.json({ success: true });
+  }
+  res.status(401).json({ success: false, message: 'Sai tên đăng nhập hoặc mật khẩu' });
+});
+
+// Logout API
+app.post('/api/logout', (req, res) => {
+  const cookies = parseCookies(req.headers.cookie);
+  if (cookies.admin_token) activeSessions.delete(cookies.admin_token);
+  res.setHeader('Set-Cookie', 'admin_token=; HttpOnly; Path=/; Max-Age=0; SameSite=Strict');
+  res.json({ success: true });
+});
+
+// Check auth status (for frontend)
+app.get('/api/check-auth', (req, res) => {
+  const cookies = parseCookies(req.headers.cookie);
+  res.json({ authenticated: isValidSession(cookies.admin_token) });
+});
+
+// Protected admin panel (main index.html)
+app.get('/', requireAdmin, (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// --- API ENDPOINTS ---
+
+// Admin: Generate a new key
+// Body: { duration_hours: number }  — 0 means unlimited
+app.post('/api/generate-key', (req, res) => {
+  const db = readDb();
+  const rawKey = uuidv4().substring(0, 13).toUpperCase().replace('-', '');
+  const newKey = `MINITECH-${rawKey.substring(0, 4)}-${rawKey.substring(4, 8)}-${rawKey.substring(8, 12)}`;
+  const durationHours = parseInt(req.body.duration_hours, 10) || 0; // 0 = unlimited
+
+  const keyObj = {
+    key: newKey,
+    createdAt: new Date().toISOString(),
+    status: 'active',
+    durationHours,          // how many hours from first activation
+    activatedAt: null,      // set on first verify-key call
+    expiresAt: null         // computed on first verify-key call
+  };
+
+  db.keys.push(keyObj);
+  writeDb(db);
+
+  res.json({ success: true, key: newKey, durationHours });
+});
+
+// Admin: Get all keys
+app.get('/api/keys', (req, res) => {
+  const db = readDb();
+  const keysWithCount = db.keys.map(k => {
+    const count = db.screenshots.filter(s => s.key === k.key).length;
+    return {
+      ...k,
+      screenshotCount: count
+    };
+  });
+  res.json({ success: true, keys: keysWithCount });
+});
+
+// Admin: Delete a key
+app.post('/api/delete-key', (req, res) => {
+  const { key } = req.body;
+  if (!key) {
+    return res.status(400).json({ success: false, message: "Key parameter missing" });
+  }
+  
+  const db = readDb();
+  db.keys = db.keys.filter(k => k.key !== key);
+  // Also filter screenshots associated with this key (optional but good practice)
+  const screenshotsToDelete = db.screenshots.filter(s => s.key === key);
+  db.screenshots = db.screenshots.filter(s => s.key !== key);
+  
+  // Delete physical files
+  screenshotsToDelete.forEach(s => {
+    const filePath = path.join(UPLOADS_DIR, s.filename);
+    if (fs.existsSync(filePath)) {
+      try {
+        fs.unlinkSync(filePath);
+      } catch (err) {
+        console.error("Error deleting file:", filePath, err);
+      }
+    }
+  });
+
+  writeDb(db);
+  res.json({ success: true, message: "Key and associated screenshots deleted" });
+});
+
+// Client & Support: Verify activation key (starts expiry timer on first call)
+app.get('/api/verify-key', (req, res) => {
+  const keyQuery = (req.query.key || '').trim().toUpperCase();
+  if (!keyQuery) {
+    return res.json({ success: false, message: "Key parameter missing" });
+  }
+
+  const db = readDb();
+  const keyObj = db.keys.find(k => k.key.toUpperCase() === keyQuery && k.status === 'active');
+
+  if (!keyObj) {
+    return res.json({ success: false, message: "Key is invalid or inactive" });
+  }
+
+  const now = Date.now();
+
+  // First activation — start the expiry clock
+  if (!keyObj.activatedAt && keyObj.durationHours > 0) {
+    keyObj.activatedAt = new Date().toISOString();
+    keyObj.expiresAt = new Date(now + keyObj.durationHours * 3600 * 1000).toISOString();
+    writeDb(db);
+    console.log(`[Key] ${keyObj.key} activated — expires ${keyObj.expiresAt}`);
+  }
+
+  // Check expiry
+  if (keyObj.expiresAt && now > new Date(keyObj.expiresAt).getTime()) {
+    keyObj.status = 'expired';
+    writeDb(db);
+    console.log(`[Key] ${keyObj.key} expired`);
+    return res.json({ success: false, message: "Key has expired" });
+  }
+
+  // Clear previous session screenshots for this key on every client startup/activation
+  const toDelete = db.screenshots.filter(s => s.key.toUpperCase() === keyQuery);
+  if (toDelete.length > 0) {
+    toDelete.forEach(s => {
+      const filePath = path.join(UPLOADS_DIR, s.filename);
+      if (fs.existsSync(filePath)) {
+        try { fs.unlinkSync(filePath); } catch (err) { /* ignore */ }
+      }
+    });
+    db.screenshots = db.screenshots.filter(s => s.key.toUpperCase() !== keyQuery);
+    writeDb(db);
+    console.log(`[History] Automatically wiped ${toDelete.length} old screenshots for key ${keyQuery}`);
+  }
+
+  res.json({
+    success: true,
+    message: "Key is valid",
+    expiresAt: keyObj.expiresAt || null,
+    durationHours: keyObj.durationHours || 0
+  });
+});
+
+// Client: Upload screenshot (takes multipart form-data with fields: 'key', 'image')
+app.post('/api/upload-screenshot', upload.single('image'), (req, res) => {
+  const key = (req.body.key || '').trim().toUpperCase();
+  if (!key) {
+    return res.status(400).json({ success: false, message: "Key is required" });
+  }
+  
+  const db = readDb();
+  const keyExists = db.keys.find(k => k.key.toUpperCase() === key && k.status === 'active');
+  if (!keyExists) {
+    // Delete uploaded file if key is invalid
+    if (req.file) {
+      fs.unlinkSync(req.file.path);
+    }
+    return res.status(401).json({ success: false, message: "Invalid or inactive key" });
+  }
+  
+  if (!req.file) {
+    return res.status(400).json({ success: false, message: "No image file provided" });
+  }
+  
+  const screenshotId = uuidv4();
+  const newScreenshot = {
+    id: screenshotId,
+    key: key,
+    filename: req.file.filename,
+    note: "",
+    question: "",
+    createdAt: new Date().toISOString()
+  };
+  
+  db.screenshots.push(newScreenshot);
+  writeDb(db);
+  
+  res.json({
+    success: true,
+    screenshotId: screenshotId,
+    filename: req.file.filename,
+    message: "Screenshot uploaded successfully"
+  });
+
+  // Background OCR to auto-detect question number with enhanced pattern matching & typo resilience
+  const filePath = req.file.path;
+  Tesseract.recognize(filePath, 'eng', {
+    tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.: ()-[]'
+  })
+    .then(({ data: { text } }) => {
+      const rawText = text.replace(/[\r\n]+/g, ' ');
+      console.log('[OCR] Raw text:', rawText.substring(0, 400));
+
+      // Normalize string: uppercase and strip diacritics
+      let normalized = rawText.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+      
+      // Fix common OCR typos for letter/number confusions near question labels
+      // e.g. "CAU HOI IO" -> "CAU HOI 10", "CAU HOI S" -> "CAU HOI 5", "CAU O1" -> "CAU 01"
+      normalized = normalized
+        .replace(/\bCAU\s*HOI\b/g, 'CAU HOI')
+        .replace(/CAU\s+HOI\s+([I|l|O|S|B|Z]+)\b/gi, (m, g1) => {
+          let numStr = g1.replace(/I|l/gi, '1').replace(/O/gi, '0').replace(/S/gi, '5').replace(/B/gi, '8').replace(/Z/gi, '2');
+          return `CAU HOI ${numStr}`;
+        });
+
+      console.log('[OCR] Processed text:', normalized.substring(0, 300));
+
+      // Flexible patterns covering standard and misread variants:
+      // 1. "CAU HOI 10", "CÂU HỎI 10", "CAU HOI10", "CAUHOI 10", "CAU H0I 10"
+      // 2. "CAU 10", "CÂU 10", "CAU10"
+      // 3. "QUESTION 10", "QUEST 10"
+      // 4. "Q 10", "Q. 10", "Q10"
+      // 5. Standalone leading numbers like "10 (SINGLECHOICE)" or "10."
+      const patterns = [
+        /(?:C[A-Z0-9]{1,2}U\s*H[A-Z0-9]{1,3}I|C[A-Z0-9]{3,5}HOI)\s*[:.-]?\s*(\d{1,3})/i,
+        /C[A-Z0-9]{1,2}U\s*[:.-]?\s*(\d{1,3})/i,
+        /QUEST(?:ION)?\s*[:.-]?\s*(\d{1,3})/i,
+        /\bQ\.?\s*(\d{1,3})\b/i,
+        /\b(\d{1,3})\s*\(\s*SINGLECHOICE\s*\)/i,
+        /\b(\d{1,3})\s*\(\s*MULTICHOICE\s*\)/i,
+        /CÂU\s*HỎI\s*(\d{1,3})/i
+      ];
+
+      let questionNum = null;
+      for (const pat of patterns) {
+        const m = normalized.match(pat);
+        if (m) {
+          questionNum = parseInt(m[1], 10);
+          break;
+        }
+      }
+
+      // Secondary fallback: look for raw text matches directly if normalization stripped something
+      if (questionNum === null) {
+        const rawMatch = rawText.match(/(?:câ|câ|cau|c[aâ]u)\s*(?:hỏi|hoi)?\s*[:.-]?\s*(\d{1,3})/i);
+        if (rawMatch) {
+          questionNum = parseInt(rawMatch[1], 10);
+        }
+      }
+
+      if (questionNum !== null && !isNaN(questionNum)) {
+        const currentDb = readDb();
+        const s = currentDb.screenshots.find(item => item.id === screenshotId);
+        if (s) {
+          s.question = `Câu ${questionNum}`;
+          writeDb(currentDb);
+          console.log(`[OCR] ✅ Auto-detected: Câu ${questionNum} for screenshot ${screenshotId}`);
+        }
+      } else {
+        console.log('[OCR] ❌ No question number found. Sample:', normalized.substring(0, 150));
+      }
+    })
+    .catch(err => {
+      console.error("[OCR] Background processing error:", err);
+    });
+});
+
+// Support & Client: Get screenshots and notes for a specific key
+app.get('/api/get-notes', (req, res) => {
+  const keyQuery = (req.query.key || '').trim().toUpperCase();
+  if (!keyQuery) {
+    return res.status(400).json({ success: false, message: "Key parameter missing" });
+  }
+  
+  const db = readDb();
+  // Filter screenshots belonging to this key
+  const screenshots = db.screenshots.filter(s => s.key.toUpperCase() === keyQuery);
+  res.json({ success: true, screenshots });
+});
+
+// Support: Download all screenshots for a specific key as a zip archive
+app.get('/api/download-all-images', (req, res) => {
+  const keyQuery = (req.query.key || '').trim().toUpperCase();
+  if (!keyQuery) {
+    return res.status(400).json({ success: false, message: "Key parameter missing" });
+  }
+
+  const db = readDb();
+  const screenshots = db.screenshots.filter(s => s.key.toUpperCase() === keyQuery);
+
+  if (screenshots.length === 0) {
+    return res.status(404).json({ success: false, message: "No screenshots found for this key" });
+  }
+
+  const zip = new AdmZip();
+  let addedCount = 0;
+
+  screenshots.forEach(s => {
+    const filePath = path.join(UPLOADS_DIR, s.filename);
+    if (fs.existsSync(filePath)) {
+      // Build smart naming: "Câu X - Dap an Y.jpg" or fallback to original filename
+      let name = s.filename;
+      if (s.question) {
+        name = s.question;
+        if (s.answer) {
+          name += ` - Dap an ${s.answer}`;
+        }
+        // Ensure name has extension and remove special chars that might break zip paths
+        name = name.replace(/[\\/:*?"<>|]/g, "_") + ".jpg";
+      }
+      zip.addLocalFile(filePath, "", name);
+      addedCount++;
+    }
+  });
+
+  if (addedCount === 0) {
+    return res.status(404).json({ success: false, message: "No physical screenshot files found on disk" });
+  }
+
+  const zipBuffer = zip.toBuffer();
+  
+  res.setHeader('Content-Type', 'application/zip');
+  res.setHeader('Content-Disposition', `attachment; filename=screenshots_${keyQuery}.zip`);
+  res.send(zipBuffer);
+});
+
+// Support: Save note, answer, or question for a specific screenshot
+app.post('/api/save-note', (req, res) => {
+  const { screenshotId, note, answer, question } = req.body;
+  if (!screenshotId) {
+    return res.status(400).json({ success: false, message: "Screenshot ID missing" });
+  }
+  
+  const db = readDb();
+  const screenshot = db.screenshots.find(s => s.id === screenshotId);
+  if (!screenshot) {
+    return res.status(404).json({ success: false, message: "Screenshot not found" });
+  }
+  
+  if (note !== undefined) {
+    screenshot.note = note;
+  }
+  if (answer !== undefined) {
+    screenshot.answer = answer;
+  }
+  if (question !== undefined) {
+    screenshot.question = question;
+  }
+  
+  writeDb(db);
+  res.json({ success: true, message: "Saved successfully" });
+});
+
+// Support: Delete specific screenshot
+app.post('/api/delete-screenshot', (req, res) => {
+  const { screenshotId } = req.body;
+  if (!screenshotId) {
+    return res.status(400).json({ success: false, message: "Screenshot ID missing" });
+  }
+  
+  const db = readDb();
+  const screenshotIndex = db.screenshots.findIndex(s => s.id === screenshotId);
+  if (screenshotIndex === -1) {
+    return res.status(404).json({ success: false, message: "Screenshot not found" });
+  }
+  
+  const s = db.screenshots[screenshotIndex];
+  const filePath = path.join(UPLOADS_DIR, s.filename);
+  if (fs.existsSync(filePath)) {
+    try {
+      fs.unlinkSync(filePath);
+    } catch (err) {
+      console.error("Error deleting file:", filePath, err);
+    }
+  }
+  
+  db.screenshots.splice(screenshotIndex, 1);
+  writeDb(db);
+  
+  res.json({ success: true, message: "Screenshot deleted" });
+});
+
+// Client: Clear all screenshots history for a key on fresh app start
+app.post('/api/clear-history', (req, res) => {
+  const key = (req.body.key || '').trim().toUpperCase();
+  if (!key) {
+    return res.status(400).json({ success: false, message: "Key is required" });
+  }
+
+  const db = readDb();
+  const toDelete = db.screenshots.filter(s => s.key.toUpperCase() === key);
+
+  toDelete.forEach(s => {
+    const filePath = path.join(UPLOADS_DIR, s.filename);
+    if (fs.existsSync(filePath)) {
+      try { fs.unlinkSync(filePath); } catch (err) { /* ignore */ }
+    }
+  });
+
+  db.screenshots = db.screenshots.filter(s => s.key.toUpperCase() !== key);
+  writeDb(db);
+
+  console.log(`[History] Cleared ${toDelete.length} screenshots for key ${key}`);
+  res.json({ success: true, cleared: toDelete.length });
+});
+
+// Serve the support-only panel (no admin features)
+app.get('/support', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'support.html'));
+});
+
+app.listen(PORT, () => {
+  console.log(`Support Server is running on port ${PORT}`);
+});
