@@ -1601,10 +1601,13 @@
       });
     }, 1000);
 
-    // Reload keys every 30s to detect new activations
+    // Initial load
+    loadKeys();
+
+    // Reload keys every 10s to detect new activations
     setInterval(() => {
       if (activeTab === 'admin') loadKeys();
-    }, 30000);
+    }, 10000);
 
     // Spin animation styling for autosave spinner
     const styleSheet = document.createElement("style");
