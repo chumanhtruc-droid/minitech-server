@@ -5,6 +5,7 @@ const path = require('path');
 const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 const AdmZip = require('adm-zip');
+const Tesseract = require('tesseract.js');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -287,10 +288,80 @@ app.get('/api/verify-key', (req, res) => {
   });
 });
 
+// --- OCR & Question Detection Helpers ---
+async function detectQuestionNumber(imagePath) {
+  try {
+    if (!fs.existsSync(imagePath)) return null;
+
+    const { data: { text } } = await Tesseract.recognize(imagePath, 'eng', {
+      langPath: __dirname,
+      logger: () => {}
+    });
+
+    if (!text || !text.trim()) return null;
+
+    console.log(`[OCR Output]: ${text.substring(0, 150).replace(/\s+/g, ' ')}...`);
+
+    // 1. Regex match: "Câu 1", "Cau 12", "Câù 5", "Question 3", "Bài 1", "Câu hỏi 1", "Câu số 1"
+    const match1 = text.match(/(?:c[aâàáảãạäiu]+u|question|bà[iì]|bai)\s*(?:h[ỏo]i|s[ốo])?\s*[:\.\-\#\)]?\s*(\d+)/i);
+    if (match1 && match1[1]) {
+      const qNum = parseInt(match1[1], 10);
+      if (qNum > 0 && qNum <= 500) {
+        return `Câu ${qNum}`;
+      }
+    }
+
+    // 2. Regex match: "1/50" or "Câu 1/50" pattern
+    const match2 = text.match(/(?:câu|cau|question)?\s*(\d+)\s*\/\s*\d+/i);
+    if (match2 && match2[1]) {
+      const qNum = parseInt(match2[1], 10);
+      if (qNum > 0 && qNum <= 500) {
+        return `Câu ${qNum}`;
+      }
+    }
+
+    // 3. Regex match: Standalone "1." or "1:" at start of a line
+    const match3 = text.match(/(?:^|\n)\s*(\d+)\s*[\.\:\)]\s+/);
+    if (match3 && match3[1]) {
+      const qNum = parseInt(match3[1], 10);
+      if (qNum > 0 && qNum <= 500) {
+        return `Câu ${qNum}`;
+      }
+    }
+
+    return null;
+  } catch (err) {
+    console.error("[OCR Exception]:", err.message || err);
+    return null;
+  }
+}
+
+function calculateImageDiff(path1, path2) {
+  try {
+    if (!fs.existsSync(path1) || !fs.existsSync(path2)) return 1.0;
+    const buf1 = fs.readFileSync(path1);
+    const buf2 = fs.readFileSync(path2);
+    if (buf1.length === buf2.length && buf1.equals(buf2)) return 0.0;
+
+    let diffCount = 0;
+    const minLen = Math.min(buf1.length, buf2.length);
+    const step = Math.max(1, Math.floor(minLen / 1000));
+    let samples = 0;
+    for (let i = 0; i < minLen; i += step) {
+      if (Math.abs(buf1[i] - buf2[i]) > 30) diffCount++;
+      samples++;
+    }
+    return samples > 0 ? (diffCount / samples) : 1.0;
+  } catch (e) {
+    return 1.0;
+  }
+}
+
 // Client: Upload screenshot (takes multipart form-data with fields: 'key', 'image')
-app.post('/api/upload-screenshot', upload.single('image'), (req, res) => {
+app.post('/api/upload-screenshot', upload.single('image'), async (req, res) => {
   const key = (req.body.key || '').trim().toUpperCase();
   if (!key) {
+    if (req.file) try { fs.unlinkSync(req.file.path); } catch {}
     return res.status(400).json({ success: false, message: "Key is required" });
   }
   
@@ -316,10 +387,16 @@ app.post('/api/upload-screenshot', upload.single('image'), (req, res) => {
     return res.status(400).json({ success: false, message: "No image file provided" });
   }
   
-  // Auto assign sequential question label (Câu 1, Câu 2, Câu 3...)
   const existingScreenshots = db.screenshots.filter(s => s.key.toUpperCase() === key);
-  const qNum = existingScreenshots.length + 1;
-  const questionLabel = `Câu ${qNum}`;
+
+  // 1. Detect question number using OCR
+  let questionLabel = await detectQuestionNumber(req.file.path);
+
+  if (!questionLabel) {
+    // Fallback: If OCR did not detect a question label, use sequential numbering (Câu 1, Câu 2...)
+    const qNum = existingScreenshots.length + 1;
+    questionLabel = `Câu ${qNum}`;
+  }
 
   const screenshotId = uuidv4();
   const newScreenshot = {
@@ -363,7 +440,7 @@ app.post('/api/auto-capture', upload.single('image'), async (req, res) => {
   const keyScreenshots = db.screenshots.filter(s => s.key.toUpperCase() === key);
 
   // 1. Detect question number using OCR
-  const questionLabel = await detectQuestionNumber(req.file.path);
+  let questionLabel = await detectQuestionNumber(req.file.path);
 
   if (questionLabel) {
     // Check if this question label has ALREADY been captured for this key!
@@ -373,16 +450,22 @@ app.post('/api/auto-capture', upload.single('image'), async (req, res) => {
       try { fs.unlinkSync(req.file.path); } catch {}
       return res.json({ success: true, duplicate: true, question: questionLabel, message: `Question ${questionLabel} already captured.` });
     }
-  } else if (keyScreenshots.length > 0) {
-    // Fallback: If no question label detected, check image difference vs the LAST captured screenshot for this key
-    const lastScreenshot = keyScreenshots[keyScreenshots.length - 1];
-    const lastPath = path.join(UPLOADS_DIR, lastScreenshot.filename);
-    const diff = calculateImageDiff(req.file.path, lastPath);
-    
-    // If screen is less than 18% different from the previous screenshot, it's the SAME page -> DUPLICATE!
-    if (diff < 0.18) {
-      try { fs.unlinkSync(req.file.path); } catch {}
-      return res.json({ success: true, duplicate: true, message: "Screen unchanged." });
+  } else {
+    // Fallback question label if OCR could not detect a number
+    const qNum = keyScreenshots.length + 1;
+    questionLabel = `Câu ${qNum}`;
+
+    if (keyScreenshots.length > 0) {
+      // Check image difference vs the LAST captured screenshot for this key
+      const lastScreenshot = keyScreenshots[keyScreenshots.length - 1];
+      const lastPath = path.join(UPLOADS_DIR, lastScreenshot.filename);
+      const diff = calculateImageDiff(req.file.path, lastPath);
+      
+      // If screen is less than 18% different from the previous screenshot, it's the SAME page -> DUPLICATE!
+      if (diff < 0.18) {
+        try { fs.unlinkSync(req.file.path); } catch {}
+        return res.json({ success: true, duplicate: true, message: "Screen unchanged." });
+      }
     }
   }
 
@@ -393,20 +476,20 @@ app.post('/api/auto-capture', upload.single('image'), async (req, res) => {
     key: key,
     filename: req.file.filename,
     note: "",
-    question: questionLabel || "",
+    question: questionLabel,
     createdAt: new Date().toISOString()
   };
 
   db.screenshots.push(newScreenshot);
   writeDb(db);
 
-  console.log(`[Auto-Capture] 📸 New question captured for ${key}: ${questionLabel || 'New Screen'}`);
+  console.log(`[Auto-Capture] 📸 New question captured for ${key}: ${questionLabel}`);
   res.json({
     success: true,
     isNew: true,
     screenshotId: screenshotId,
     filename: req.file.filename,
-    question: questionLabel || "",
+    question: questionLabel,
     message: "New question captured!"
   });
 });
