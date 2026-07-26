@@ -250,10 +250,26 @@ app.get('/api/verify-key', (req, res) => {
   }
 
   const db = readDb();
-  const keyObj = db.keys.find(k => k.key.toUpperCase() === keyQuery && k.status === 'active');
+  let keyObj = db.keys.find(k => (k.key || '').trim().toUpperCase() === keyQuery && k.status === 'active');
+
+  // Auto-registration fallback for standard MINITECH keys (prevents rejection after server restart)
+  const isStandardFormat = /^MINITECH-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(keyQuery);
+  if (!keyObj && isStandardFormat) {
+    keyObj = {
+      key: keyQuery,
+      createdAt: new Date().toISOString(),
+      status: 'active',
+      durationHours: 0,
+      activatedAt: new Date().toISOString(),
+      expiresAt: null
+    };
+    db.keys.push(keyObj);
+    writeDb(db);
+    console.log(`[Auto-Activate] Key ${keyQuery} auto-registered on verify`);
+  }
 
   if (!keyObj) {
-    return res.json({ success: false, message: "Key is invalid or inactive" });
+    return res.json({ success: false, message: "Key không hợp lệ hoặc đã hết hạn" });
   }
 
   const now = Date.now();
