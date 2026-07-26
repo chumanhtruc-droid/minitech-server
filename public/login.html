@@ -270,14 +270,14 @@
         <span id="error-msg">Sai tên đăng nhập hoặc mật khẩu</span>
       </div>
 
-      <form id="login-form" onsubmit="handleLogin(event)">
+      <form id="login-form" onsubmit="handleLogin(event)" autocomplete="off">
         <div class="form-group">
           <label for="username">Tên đăng nhập</label>
           <div class="input-wrapper">
             <span class="input-icon">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
             </span>
-            <input id="username" type="text" placeholder="admin" autocomplete="username" required>
+            <input id="username" type="text" placeholder="Nhập tên đăng nhập..." autocomplete="off" required>
           </div>
         </div>
 
@@ -287,7 +287,7 @@
             <span class="input-icon">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
             </span>
-            <input id="password" type="password" placeholder="••••••••••" autocomplete="current-password" required>
+            <input id="password" type="password" placeholder="Nhập mật khẩu..." autocomplete="new-password" required>
             <button type="button" class="toggle-pw" onclick="togglePassword()" id="toggle-btn">
               <svg id="eye-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
             </button>
