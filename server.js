@@ -63,23 +63,39 @@ if (!fs.existsSync(UPLOADS_DIR)) {
   fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 }
 
+let memoryDb = null;
+
 function readDb() {
-  if (!fs.existsSync(DB_PATH)) {
-    const initialDb = { keys: [], screenshots: [] };
-    fs.writeFileSync(DB_PATH, JSON.stringify(initialDb, null, 2), 'utf-8');
-    return initialDb;
+  if (memoryDb) {
+    return memoryDb;
   }
-  try {
-    const data = fs.readFileSync(DB_PATH, 'utf-8');
-    return JSON.parse(data);
-  } catch (err) {
-    console.error("Error reading database file, resetting:", err);
-    return { keys: [], screenshots: [] };
+  if (fs.existsSync(DB_PATH)) {
+    try {
+      const data = fs.readFileSync(DB_PATH, 'utf-8');
+      if (data && data.trim()) {
+        const parsed = JSON.parse(data);
+        memoryDb = {
+          keys: Array.isArray(parsed.keys) ? parsed.keys : [],
+          screenshots: Array.isArray(parsed.screenshots) ? parsed.screenshots : []
+        };
+        return memoryDb;
+      }
+    } catch (err) {
+      console.error("Error reading database file:", err);
+    }
   }
+  memoryDb = { keys: [], screenshots: [] };
+  writeDb(memoryDb);
+  return memoryDb;
 }
 
 function writeDb(data) {
-  fs.writeFileSync(DB_PATH, JSON.stringify(data, null, 2), 'utf-8');
+  memoryDb = data;
+  try {
+    fs.writeFileSync(DB_PATH, JSON.stringify(data, null, 2), 'utf-8');
+  } catch (err) {
+    console.error("Error writing database file:", err);
+  }
 }
 
 // Multer configuration for screenshot uploads
