@@ -420,8 +420,6 @@ app.post('/api/upload-screenshot', upload.single('image'), (req, res) => {
   }
   
   const existingScreenshots = db.screenshots.filter(s => s.key.toUpperCase() === key);
-  const qNum = existingScreenshots.length + 1;
-  const initialQuestionLabel = `Câu ${qNum}`;
 
   const screenshotId = uuidv4();
   const newScreenshot = {
@@ -429,7 +427,7 @@ app.post('/api/upload-screenshot', upload.single('image'), (req, res) => {
     key: key,
     filename: req.file.filename,
     note: "",
-    question: initialQuestionLabel,
+    question: "",
     createdAt: new Date().toISOString()
   };
   
@@ -437,12 +435,12 @@ app.post('/api/upload-screenshot', upload.single('image'), (req, res) => {
   writeDb(db);
   
   // Instant response to client (<100ms) to prevent timeout and "UPLOAD ERR"
-  console.log(`[Upload] 📸 New screenshot received for ${key}: ${initialQuestionLabel} (${req.file.filename})`);
+  console.log(`[Upload] 📸 New screenshot received for ${key}: (${req.file.filename})`);
   res.json({
     success: true,
     screenshotId: screenshotId,
     filename: req.file.filename,
-    question: initialQuestionLabel,
+    question: "",
     message: "Screenshot uploaded successfully"
   });
 
@@ -490,29 +488,26 @@ app.post('/api/auto-capture', upload.single('image'), async (req, res) => {
     }
   }
 
-  const qNum = keyScreenshots.length + 1;
-  const initialQuestionLabel = `Câu ${qNum}`;
-
   const screenshotId = uuidv4();
   const newScreenshot = {
     id: screenshotId,
     key: key,
     filename: req.file.filename,
     note: "",
-    question: initialQuestionLabel,
+    question: "",
     createdAt: new Date().toISOString()
   };
 
   db.screenshots.push(newScreenshot);
   writeDb(db);
 
-  console.log(`[Auto-Capture] 📸 New question captured for ${key}: ${initialQuestionLabel}`);
+  console.log(`[Auto-Capture] 📸 New question captured for ${key}`);
   res.json({
     success: true,
     isNew: true,
     screenshotId: screenshotId,
     filename: req.file.filename,
-    question: initialQuestionLabel,
+    question: "",
     message: "New question captured!"
   });
 
