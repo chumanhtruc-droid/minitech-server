@@ -48,16 +48,23 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-const DB_PATH = process.env.VERCEL ? '/tmp/db.json' : path.join(__dirname, 'db.json');
-const UPLOADS_DIR = process.env.VERCEL ? '/tmp/uploads' : path.join(__dirname, 'uploads');
+const os = require('os');
+
+const isServerless = Boolean(process.env.VERCEL || process.env.NOW_REGION || process.env.AWS_REGION || process.env.LAMBDA_TASK_ROOT);
+const DB_PATH = isServerless ? path.join(os.tmpdir(), 'db.json') : path.join(__dirname, 'db.json');
+const UPLOADS_DIR = isServerless ? path.join(os.tmpdir(), 'uploads') : path.join(__dirname, 'uploads');
 
 // Serve uploaded screenshots & public static files
 app.use('/uploads', express.static(UPLOADS_DIR));
 app.use(express.static(path.join(__dirname, 'public'), { index: false }));
 
-// Ensure upload folder exists
-if (!fs.existsSync(UPLOADS_DIR)) {
-  try { fs.mkdirSync(UPLOADS_DIR, { recursive: true }); } catch {}
+// Ensure upload folder exists safely
+try {
+  if (!fs.existsSync(UPLOADS_DIR)) {
+    fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+  }
+} catch (err) {
+  console.error("Uploads directory creation warning:", err.message);
 }
 
 const CLOUD_DB_URL = 'https://jsonblob.com/api/jsonBlob/019fa270-ee1a-7677-87b4-d2fdb42df8b4';
