@@ -473,7 +473,7 @@ Trả về ĐÚNG 1 ĐỊNH DẠNG JSON duy nhất (không bọc trong markdown)
     };
 
     const fetch = (await import('node-fetch')).default || globalThis.fetch;
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
 
     const response = await fetch(url, {
       method: 'POST',
