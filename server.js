@@ -767,6 +767,10 @@ app.get('/support', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'support.html'));
 });
 
-app.listen(PORT, () => {
-  console.log(`Support Server is running on port ${PORT}`);
-});
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`Support Server is running on port ${PORT}`);
+  });
+}
+
+module.exports = app;
