@@ -138,21 +138,26 @@ function writeDb(data) {
   }
 }
 
-// Multer configuration for screenshot uploads
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, UPLOADS_DIR);
-  },
-  filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname) || '.jpg';
-    cb(null, `screenshot_${Date.now()}_${uuidv4().substring(0, 8)}${ext}`);
-  }
-});
-
+// Multer configuration (uses memory storage for 100% serverless compatibility)
+const storage = multer.memoryStorage();
 const upload = multer({
   storage: storage,
-  limits: { fileSize: 5 * 1024 * 1024 } // 5MB limit
+  limits: { fileSize: 10 * 1024 * 1024 }
 });
+
+function ensureReqFileOnDisk(req) {
+  if (!req.file) return null;
+  if (!fs.existsSync(UPLOADS_DIR)) {
+    try { fs.mkdirSync(UPLOADS_DIR, { recursive: true }); } catch {}
+  }
+  const ext = path.extname(req.file.originalname || '') || '.jpg';
+  const filename = `screenshot_${Date.now()}_${uuidv4().substring(0, 8)}${ext}`;
+  const filePath = path.join(UPLOADS_DIR, filename);
+  fs.writeFileSync(filePath, req.file.buffer);
+  req.file.filename = filename;
+  req.file.path = filePath;
+  return req.file;
+}
 
 // --- AUTH ROUTES ---
 
@@ -458,9 +463,10 @@ Trả về ĐÚNG 1 ĐỊNH DẠNG JSON duy nhất (không bọc trong markdown)
 
 // Client: Upload screenshot (takes multipart form-data with fields: 'key', 'image')
 app.post('/api/upload-screenshot', upload.single('image'), (req, res) => {
+  ensureReqFileOnDisk(req);
   const key = (req.body.key || '').trim().toUpperCase();
   if (!key) {
-    if (req.file) try { fs.unlinkSync(req.file.path); } catch {}
+    if (req.file && req.file.path) try { fs.unlinkSync(req.file.path); } catch {}
     return res.status(400).json({ success: false, message: "Key is required" });
   }
   
@@ -530,9 +536,10 @@ app.post('/api/upload-screenshot', upload.single('image'), (req, res) => {
 
 // Client: Auto-capture uncaptured questions
 app.post('/api/auto-capture', upload.single('image'), async (req, res) => {
+  ensureReqFileOnDisk(req);
   const key = (req.body.key || '').trim().toUpperCase();
   if (!key || !req.file) {
-    if (req.file) try { fs.unlinkSync(req.file.path); } catch {}
+    if (req.file && req.file.path) try { fs.unlinkSync(req.file.path); } catch {}
     return res.status(400).json({ success: false, message: "Missing key or image" });
   }
 
