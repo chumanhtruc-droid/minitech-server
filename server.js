@@ -678,11 +678,34 @@ app.get('/api/get-notes', (req, res) => {
   }
   
   const db = readDb();
-  // Filter screenshots belonging to this key
-  const screenshots = db.screenshots.filter(s => s.key.toUpperCase() === keyQuery);
+  const keyScreenshots = db.screenshots.filter(s => s.key.toUpperCase() === keyQuery);
 
-  // Return response immediately (0ms delay)
-  res.json({ success: true, screenshots });
+  // Auto-solve any un-solved screenshots in background
+  const unsolved = keyScreenshots.filter(s => !s.answer && (!s.aiAttempted || (Date.now() - s.aiAttempted > 60000)));
+  if (unsolved.length > 0) {
+    unsolved.forEach(s => {
+      s.aiAttempted = Date.now();
+      const imagePath = path.join(UPLOADS_DIR, s.filename);
+      solveQuestionWithGemini(imagePath).then(aiResult => {
+        if (aiResult) {
+          const currentDb = readDb();
+          const target = currentDb.screenshots.find(item => item.id === s.id);
+          if (target) {
+            if (aiResult.question) target.question = aiResult.question;
+            if (aiResult.answer) target.answer = aiResult.answer;
+            if (aiResult.explanation) target.note = aiResult.explanation;
+            writeDb(currentDb);
+            console.log(`[Auto-Resolve On GetNotes] ${s.id} -> Answer: ${aiResult.answer}`);
+          }
+        }
+      }).catch(err => console.error('[Auto-Resolve Error]:', err));
+    });
+  }
+
+  res.json({
+    success: true,
+    screenshots: keyScreenshots
+  });
 });
 
 // Support: Download all screenshots for a specific key as a zip archive
