@@ -67,13 +67,13 @@ let isSyncingCloud = false;
 // Async initial load from Cloud DB on server startup
 async function initCloudDb() {
   try {
-    const fetch = (await import('node-fetch')).default || globalThis.fetch;
-    const res = await fetch(CLOUD_DB_URL);
+    const fetchFn = globalThis.fetch || (await import('node-fetch')).default;
+    const res = await fetchFn(CLOUD_DB_URL);
     if (res.ok) {
       const data = await res.json();
       if (data && Array.isArray(data.keys)) {
         memoryDb = data;
-        fs.writeFileSync(DB_PATH, JSON.stringify(data, null, 2), 'utf-8');
+        try { fs.writeFileSync(DB_PATH, JSON.stringify(data, null, 2), 'utf-8'); } catch {}
         console.log(`[Cloud DB] Loaded ${memoryDb.keys.length} keys from cloud storage.`);
       }
     }
@@ -423,10 +423,10 @@ Trả về ĐÚNG 1 ĐỊNH DẠNG JSON duy nhất (không bọc trong markdown)
       }
     };
 
-    const fetch = (await import('node-fetch')).default || globalThis.fetch;
+    const fetchFn = globalThis.fetch || (await import('node-fetch')).default;
     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
 
-    const response = await fetch(url, {
+    const response = await fetchFn(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
