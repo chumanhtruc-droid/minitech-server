@@ -63,7 +63,30 @@ if (!fs.existsSync(UPLOADS_DIR)) {
   fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 }
 
+const CLOUD_DB_URL = 'https://jsonblob.com/api/jsonBlob/019fa270-ee1a-7677-87b4-d2fdb42df8b4';
 let memoryDb = null;
+let isSyncingCloud = false;
+
+// Async initial load from Cloud DB on server startup
+async function initCloudDb() {
+  try {
+    const fetch = (await import('node-fetch')).default || globalThis.fetch;
+    const res = await fetch(CLOUD_DB_URL);
+    if (res.ok) {
+      const data = await res.json();
+      if (data && Array.isArray(data.keys)) {
+        memoryDb = data;
+        fs.writeFileSync(DB_PATH, JSON.stringify(data, null, 2), 'utf-8');
+        console.log(`[Cloud DB] Loaded ${memoryDb.keys.length} keys from cloud storage.`);
+      }
+    }
+  } catch (err) {
+    console.error('[Cloud DB Load Error]:', err.message || err);
+  }
+}
+
+// Initial sync on module load
+initCloudDb();
 
 function readDb() {
   if (memoryDb) {
@@ -95,6 +118,26 @@ function writeDb(data) {
     fs.writeFileSync(DB_PATH, JSON.stringify(data, null, 2), 'utf-8');
   } catch (err) {
     console.error("Error writing database file:", err);
+  }
+
+  // Background Cloud Persistence Sync (Non-blocking)
+  if (!isSyncingCloud) {
+    isSyncingCloud = true;
+    setTimeout(async () => {
+      try {
+        const fetch = (await import('node-fetch')).default || globalThis.fetch;
+        await fetch(CLOUD_DB_URL, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(memoryDb)
+        });
+        console.log('[Cloud DB] Synced database to persistent cloud storage.');
+      } catch (err) {
+        console.error('[Cloud DB Sync Error]:', err.message || err);
+      } finally {
+        isSyncingCloud = false;
+      }
+    }, 300);
   }
 }
 
