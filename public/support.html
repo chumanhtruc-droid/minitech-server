@@ -551,8 +551,8 @@
           card.style.opacity = '0';
           card.style.transform = 'translateY(15px)';
           card.innerHTML = `
-            <div class="image-container" onclick="openModal(API_BASE+'/uploads/${s.filename}?v=${s.id}')">
-              <img src="${API_BASE}/uploads/${s.filename}?v=${s.id}" alt="Màn hình người dùng">
+            <div class="image-container" onclick="openModal(this.querySelector('img').src)">
+              <img src="${s.imageData || (API_BASE+'/uploads/'+s.filename+'?v='+s.id)}" alt="Màn hình người dùng">
             </div>
             <div class="screenshot-info">
               <div class="screenshot-meta" style="align-items:center;justify-content:space-between;">

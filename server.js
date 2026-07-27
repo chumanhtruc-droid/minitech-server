@@ -62,18 +62,47 @@ try {
   console.error("Uploads directory creation warning:", err.message);
 }
 
+function mergeDbs(remoteDb, localDb) {
+  const keyMap = new Map();
+  ((remoteDb && remoteDb.keys) || []).concat((localDb && localDb.keys) || []).forEach(k => {
+    if (k && k.key) keyMap.set(k.key.toUpperCase(), k);
+  });
+
+  const screenshotMap = new Map();
+  ((remoteDb && remoteDb.screenshots) || []).concat((localDb && localDb.screenshots) || []).forEach(s => {
+    if (s && s.id) {
+      const existing = screenshotMap.get(s.id);
+      if (!existing) {
+        screenshotMap.set(s.id, s);
+      } else {
+        screenshotMap.set(s.id, {
+          ...existing,
+          ...s,
+          answer: s.answer || existing.answer || '',
+          note: s.note || existing.note || '',
+          question: s.question || existing.question || '',
+          imageData: s.imageData || existing.imageData || ''
+        });
+      }
+    }
+  });
+
+  return {
+    keys: Array.from(keyMap.values()),
+    screenshots: Array.from(screenshotMap.values())
+  };
+}
+
 // Async initial load from Cloud DB on server startup
 async function initCloudDb() {
   try {
     const fetchFn = globalThis.fetch || (await import('node-fetch')).default;
     const res = await fetchFn(CLOUD_DB_URL);
     if (res.ok) {
-      const data = await res.json();
-      if (data && Array.isArray(data.keys)) {
-        memoryDb = data;
-        try { fs.writeFileSync(DB_PATH, JSON.stringify(data, null, 2), 'utf-8'); } catch {}
-        console.log(`[Cloud DB] Loaded ${memoryDb.keys.length} keys from cloud storage.`);
-      }
+      const remoteData = await res.json();
+      memoryDb = mergeDbs(remoteData, memoryDb || { keys: [], screenshots: [] });
+      try { fs.writeFileSync(DB_PATH, JSON.stringify(memoryDb, null, 2), 'utf-8'); } catch {}
+      console.log(`[Cloud DB] Synced ${memoryDb.screenshots.length} screenshots from cloud storage.`);
     }
   } catch (err) {
     console.error('[Cloud DB Load Error]:', err.message || err);
@@ -84,9 +113,7 @@ async function initCloudDb() {
 initCloudDb();
 
 async function ensureCloudDbLoaded() {
-  if (!memoryDb || !Array.isArray(memoryDb.keys) || memoryDb.keys.length === 0) {
-    await initCloudDb();
-  }
+  await initCloudDb();
   return readDb();
 }
 
@@ -128,12 +155,21 @@ function writeDb(data) {
     setTimeout(async () => {
       try {
         const fetchFn = globalThis.fetch || (await import('node-fetch')).default;
+        let latestRemote = null;
+        try {
+          const getRes = await fetchFn(CLOUD_DB_URL);
+          if (getRes.ok) latestRemote = await getRes.json();
+        } catch {}
+
+        const mergedData = mergeDbs(latestRemote, memoryDb);
+        memoryDb = mergedData;
+
         await fetchFn(CLOUD_DB_URL, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(memoryDb)
+          body: JSON.stringify(mergedData)
         });
-        console.log('[Cloud DB] Synced database to persistent cloud storage.');
+        console.log('[Cloud DB] Synced merged database to persistent cloud storage.');
       } catch (err) {
         console.error('[Cloud DB Sync Error]:', err.message || err);
       } finally {
@@ -158,9 +194,12 @@ function ensureReqFileOnDisk(req) {
   const ext = path.extname(req.file.originalname || '') || '.jpg';
   const filename = `screenshot_${Date.now()}_${uuidv4().substring(0, 8)}${ext}`;
   const filePath = path.join(UPLOADS_DIR, filename);
-  fs.writeFileSync(filePath, req.file.buffer);
+  try { fs.writeFileSync(filePath, req.file.buffer); } catch {}
   req.file.filename = filename;
   req.file.path = filePath;
+  if (req.file.buffer) {
+    req.file.imageData = `data:image/jpeg;base64,${req.file.buffer.toString('base64')}`;
+  }
   return req.file;
 }
 
@@ -501,6 +540,7 @@ app.post('/api/upload-screenshot', upload.single('image'), (req, res) => {
     id: screenshotId,
     key: key,
     filename: req.file.filename,
+    imageData: req.file.imageData || "",
     note: "",
     question: "",
     answer: "",
@@ -570,6 +610,7 @@ app.post('/api/auto-capture', upload.single('image'), async (req, res) => {
     id: screenshotId,
     key: key,
     filename: req.file.filename,
+    imageData: req.file.imageData || "",
     note: "",
     question: "",
     answer: "",
