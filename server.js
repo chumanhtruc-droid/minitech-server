@@ -48,18 +48,16 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Serve uploaded screenshots (public - clients need this)
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+const DB_PATH = process.env.VERCEL ? '/tmp/db.json' : path.join(__dirname, 'db.json');
+const UPLOADS_DIR = process.env.VERCEL ? '/tmp/uploads' : path.join(__dirname, 'uploads');
 
-// Serve static files EXCEPT index.html for admin (we protect that)
+// Serve uploaded screenshots & public static files
+app.use('/uploads', express.static(UPLOADS_DIR));
 app.use(express.static(path.join(__dirname, 'public'), { index: false }));
 
-const DB_PATH = path.join(__dirname, 'db.json');
-const UPLOADS_DIR = path.join(__dirname, 'uploads');
-
-// Ensure database and upload folder exist
+// Ensure upload folder exists
 if (!fs.existsSync(UPLOADS_DIR)) {
-  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+  try { fs.mkdirSync(UPLOADS_DIR, { recursive: true }); } catch {}
 }
 
 const CLOUD_DB_URL = 'https://jsonblob.com/api/jsonBlob/019fa270-ee1a-7677-87b4-d2fdb42df8b4';
