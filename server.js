@@ -9,23 +9,14 @@ const AdmZip = require('adm-zip');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// ── Auth config ─────────────────────────────────────────────
+// ── Auth config (Stateless for Vercel Serverless) ─────────────
+const crypto = require('crypto');
 const ADMIN_USERNAME = 'admin';
 const ADMIN_PASSWORD = '0934494823';
-const activeSessions = new Map(); // token → expiry timestamp
-const SESSION_TTL_MS = 8 * 60 * 60 * 1000; // 8 hours
-
-function createSession() {
-  const token = uuidv4();
-  activeSessions.set(token, Date.now() + SESSION_TTL_MS);
-  return token;
-}
+const ADMIN_TOKEN_SECRET = crypto.createHash('sha256').update(`${ADMIN_USERNAME}:${ADMIN_PASSWORD}:MINITECH_2026`).digest('hex');
 
 function isValidSession(token) {
-  if (!token || !activeSessions.has(token)) return false;
-  const expiry = activeSessions.get(token);
-  if (Date.now() > expiry) { activeSessions.delete(token); return false; }
-  return true;
+  return token === ADMIN_TOKEN_SECRET;
 }
 
 function parseCookies(cookieHeader = '') {
@@ -184,8 +175,7 @@ app.get('/login', (req, res) => {
 app.post('/api/login', (req, res) => {
   const { username, password } = req.body;
   if (username === ADMIN_USERNAME && password === ADMIN_PASSWORD) {
-    const token = createSession();
-    res.setHeader('Set-Cookie', `admin_token=${token}; HttpOnly; Path=/; Max-Age=28800; SameSite=Strict`);
+    res.setHeader('Set-Cookie', `admin_token=${ADMIN_TOKEN_SECRET}; HttpOnly; Path=/; Max-Age=28800; SameSite=Lax`);
     return res.json({ success: true });
   }
   res.status(401).json({ success: false, message: 'Sai tên đăng nhập hoặc mật khẩu' });
@@ -193,9 +183,7 @@ app.post('/api/login', (req, res) => {
 
 // Logout API
 app.post('/api/logout', (req, res) => {
-  const cookies = parseCookies(req.headers.cookie);
-  if (cookies.admin_token) activeSessions.delete(cookies.admin_token);
-  res.setHeader('Set-Cookie', 'admin_token=; HttpOnly; Path=/; Max-Age=0; SameSite=Strict');
+  res.setHeader('Set-Cookie', 'admin_token=; HttpOnly; Path=/; Max-Age=0; SameSite=Lax');
   res.json({ success: true });
 });
 
