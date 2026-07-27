@@ -390,7 +390,7 @@ function calculateImageDiff(path1, path2) {
 }
 
 // Client: Upload screenshot (takes multipart form-data with fields: 'key', 'image')
-app.post('/api/upload-screenshot', upload.single('image'), async (req, res) => {
+app.post('/api/upload-screenshot', upload.single('image'), (req, res) => {
   const key = (req.body.key || '').trim().toUpperCase();
   if (!key) {
     if (req.file) try { fs.unlinkSync(req.file.path); } catch {}
@@ -420,15 +420,8 @@ app.post('/api/upload-screenshot', upload.single('image'), async (req, res) => {
   }
   
   const existingScreenshots = db.screenshots.filter(s => s.key.toUpperCase() === key);
-
-  // 1. Detect question number using OCR
-  let questionLabel = await detectQuestionNumber(req.file.path);
-
-  if (!questionLabel) {
-    // Fallback: If OCR did not detect a question label, use sequential numbering (Câu 1, Câu 2...)
-    const qNum = existingScreenshots.length + 1;
-    questionLabel = `Câu ${qNum}`;
-  }
+  const qNum = existingScreenshots.length + 1;
+  const initialQuestionLabel = `Câu ${qNum}`;
 
   const screenshotId = uuidv4();
   const newScreenshot = {
@@ -436,20 +429,36 @@ app.post('/api/upload-screenshot', upload.single('image'), async (req, res) => {
     key: key,
     filename: req.file.filename,
     note: "",
-    question: questionLabel,
+    question: initialQuestionLabel,
     createdAt: new Date().toISOString()
   };
   
   db.screenshots.push(newScreenshot);
   writeDb(db);
   
-  console.log(`[Upload] 📸 New screenshot received for ${key}: ${questionLabel} (${req.file.filename})`);
+  // Instant response to client (<100ms) to prevent timeout and "UPLOAD ERR"
+  console.log(`[Upload] 📸 New screenshot received for ${key}: ${initialQuestionLabel} (${req.file.filename})`);
   res.json({
     success: true,
     screenshotId: screenshotId,
     filename: req.file.filename,
-    question: questionLabel,
+    question: initialQuestionLabel,
     message: "Screenshot uploaded successfully"
+  });
+
+  // Background OCR Question Detection (Non-blocking)
+  detectQuestionNumber(req.file.path).then(detectedLabel => {
+    if (detectedLabel) {
+      const currentDb = readDb();
+      const s = currentDb.screenshots.find(item => item.id === screenshotId);
+      if (s) {
+        s.question = detectedLabel;
+        writeDb(currentDb);
+        console.log(`[OCR Updated] Screenshot ${screenshotId} label updated to ${detectedLabel}`);
+      }
+    }
+  }).catch(err => {
+    console.error(`[OCR Error] Screenshot ${screenshotId}:`, err);
   });
 });
 
@@ -468,61 +477,58 @@ app.post('/api/auto-capture', upload.single('image'), async (req, res) => {
     return res.status(401).json({ success: false, message: "Invalid key" });
   }
 
-  // Get existing screenshots for this key
   const keyScreenshots = db.screenshots.filter(s => s.key.toUpperCase() === key);
 
-  // 1. Detect question number using OCR
-  let questionLabel = await detectQuestionNumber(req.file.path);
-
-  if (questionLabel) {
-    // Check if this question label has ALREADY been captured for this key!
-    const existing = keyScreenshots.find(s => s.question.toLowerCase() === questionLabel.toLowerCase());
-    if (existing) {
-      // DUPLICATE QUESTION — Delete temp upload file immediately!
+  if (keyScreenshots.length > 0) {
+    const lastScreenshot = keyScreenshots[keyScreenshots.length - 1];
+    const lastPath = path.join(UPLOADS_DIR, lastScreenshot.filename);
+    const diff = calculateImageDiff(req.file.path, lastPath);
+    
+    if (diff < 0.18) {
       try { fs.unlinkSync(req.file.path); } catch {}
-      return res.json({ success: true, duplicate: true, question: questionLabel, message: `Question ${questionLabel} already captured.` });
-    }
-  } else {
-    // Fallback question label if OCR could not detect a number
-    const qNum = keyScreenshots.length + 1;
-    questionLabel = `Câu ${qNum}`;
-
-    if (keyScreenshots.length > 0) {
-      // Check image difference vs the LAST captured screenshot for this key
-      const lastScreenshot = keyScreenshots[keyScreenshots.length - 1];
-      const lastPath = path.join(UPLOADS_DIR, lastScreenshot.filename);
-      const diff = calculateImageDiff(req.file.path, lastPath);
-      
-      // If screen is less than 18% different from the previous screenshot, it's the SAME page -> DUPLICATE!
-      if (diff < 0.18) {
-        try { fs.unlinkSync(req.file.path); } catch {}
-        return res.json({ success: true, duplicate: true, message: "Screen unchanged." });
-      }
+      return res.json({ success: true, duplicate: true, message: "Screen unchanged." });
     }
   }
 
-  // NEW QUESTION DETECTED! Save screenshot
+  const qNum = keyScreenshots.length + 1;
+  const initialQuestionLabel = `Câu ${qNum}`;
+
   const screenshotId = uuidv4();
   const newScreenshot = {
     id: screenshotId,
     key: key,
     filename: req.file.filename,
     note: "",
-    question: questionLabel,
+    question: initialQuestionLabel,
     createdAt: new Date().toISOString()
   };
 
   db.screenshots.push(newScreenshot);
   writeDb(db);
 
-  console.log(`[Auto-Capture] 📸 New question captured for ${key}: ${questionLabel}`);
+  console.log(`[Auto-Capture] 📸 New question captured for ${key}: ${initialQuestionLabel}`);
   res.json({
     success: true,
     isNew: true,
     screenshotId: screenshotId,
     filename: req.file.filename,
-    question: questionLabel,
+    question: initialQuestionLabel,
     message: "New question captured!"
+  });
+
+  // Background OCR Question Detection (Non-blocking)
+  detectQuestionNumber(req.file.path).then(detectedLabel => {
+    if (detectedLabel) {
+      const currentDb = readDb();
+      const s = currentDb.screenshots.find(item => item.id === screenshotId);
+      if (s) {
+        s.question = detectedLabel;
+        writeDb(currentDb);
+        console.log(`[Auto-Capture OCR Updated] Screenshot ${screenshotId} label updated to ${detectedLabel}`);
+      }
+    }
+  }).catch(err => {
+    console.error(`[Auto-Capture OCR Error] Screenshot ${screenshotId}:`, err);
   });
 });
 
