@@ -432,6 +432,79 @@ function calculateImageDiff(path1, path2) {
   }
 }
 
+// --- AI Gemini Auto-Solver Helper ---
+async function solveQuestionWithGemini(imagePath) {
+  try {
+    if (!fs.existsSync(imagePath)) return null;
+
+    const apiKey = process.env.GEMINI_API_KEY || "";
+    if (!apiKey) {
+      return null;
+    }
+
+    const base64Image = fs.readFileSync(imagePath).toString('base64');
+
+    const promptText = `Bạn là một chuyên gia giải bài thi trắc nghiệm. Hãy nhìn hình ảnh này:
+1. Đọc câu hỏi và chọn duy nhất 1 đáp án đúng (A, B, C, D hoặc E).
+2. Viết lời giải thích ngắn gọn (1-2 câu).
+3. Xác định số thứ tự câu hỏi nếu có (ví dụ: "Câu 15").
+
+Trả về ĐÚNG 1 ĐỊNH DẠNG JSON duy nhất (không bọc trong markdown):
+{"question":"Câu X","answer":"A","explanation":"Lời giải thích..."}`;
+
+    const payload = {
+      contents: [
+        {
+          parts: [
+            { text: promptText },
+            {
+              inline_data: {
+                mime_type: "image/jpeg",
+                data: base64Image
+              }
+            }
+          ]
+        }
+      ],
+      generationConfig: {
+        temperature: 0.1,
+        maxOutputTokens: 350
+      }
+    };
+
+    const fetch = (await import('node-fetch')).default || globalThis.fetch;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      console.error(`[Gemini API Error] HTTP ${response.status}: ${errText.substring(0, 150)}`);
+      return null;
+    }
+
+    const data = await response.json();
+    const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+    console.log(`[Gemini AI Raw Result]:\n${rawText}`);
+
+    const cleanJson = rawText.replace(/```json/gi, '').replace(/```/g, '').trim();
+    const parsed = JSON.parse(cleanJson);
+
+    return {
+      question: parsed.question || "",
+      answer: (parsed.answer || "").toUpperCase().trim(),
+      explanation: parsed.explanation || ""
+    };
+  } catch (err) {
+    console.error("[Gemini Solver Exception]:", err.message || err);
+    return null;
+  }
+}
+
 // Client: Upload screenshot (takes multipart form-data with fields: 'key', 'image')
 app.post('/api/upload-screenshot', upload.single('image'), (req, res) => {
   const key = (req.body.key || '').trim().toUpperCase();
@@ -471,6 +544,7 @@ app.post('/api/upload-screenshot', upload.single('image'), (req, res) => {
     filename: req.file.filename,
     note: "",
     question: "",
+    answer: "",
     createdAt: new Date().toISOString()
   };
   
@@ -487,19 +561,31 @@ app.post('/api/upload-screenshot', upload.single('image'), (req, res) => {
     message: "Screenshot uploaded successfully"
   });
 
-  // Background OCR Question Detection (Non-blocking)
-  detectQuestionNumber(req.file.path).then(detectedLabel => {
-    if (detectedLabel) {
-      const currentDb = readDb();
-      const s = currentDb.screenshots.find(item => item.id === screenshotId);
-      if (s) {
-        s.question = detectedLabel;
-        writeDb(currentDb);
-        console.log(`[OCR Updated] Screenshot ${screenshotId} label updated to ${detectedLabel}`);
-      }
+  // Background AI Auto-Solver & OCR (Non-blocking)
+  solveQuestionWithGemini(req.file.path).then(aiResult => {
+    const currentDb = readDb();
+    const s = currentDb.screenshots.find(item => item.id === screenshotId);
+    if (s && aiResult) {
+      if (aiResult.question) s.question = aiResult.question;
+      if (aiResult.answer) s.answer = aiResult.answer;
+      if (aiResult.explanation) s.note = aiResult.explanation;
+      writeDb(currentDb);
+      console.log(`[AI Auto-Solved] Screenshot ${screenshotId} -> Question: ${s.question}, Answer: ${s.answer}`);
+    } else {
+      // Fallback: OCR question detection if AI API key is not configured
+      detectQuestionNumber(req.file.path).then(detectedLabel => {
+        if (detectedLabel) {
+          const currentDb2 = readDb();
+          const s2 = currentDb2.screenshots.find(item => item.id === screenshotId);
+          if (s2) {
+            s2.question = detectedLabel;
+            writeDb(currentDb2);
+          }
+        }
+      });
     }
   }).catch(err => {
-    console.error(`[OCR Error] Screenshot ${screenshotId}:`, err);
+    console.error(`[AI Solver Error] Screenshot ${screenshotId}:`, err);
   });
 });
 
@@ -538,6 +624,7 @@ app.post('/api/auto-capture', upload.single('image'), async (req, res) => {
     filename: req.file.filename,
     note: "",
     question: "",
+    answer: "",
     createdAt: new Date().toISOString()
   };
 
@@ -554,19 +641,31 @@ app.post('/api/auto-capture', upload.single('image'), async (req, res) => {
     message: "New question captured!"
   });
 
-  // Background OCR Question Detection (Non-blocking)
-  detectQuestionNumber(req.file.path).then(detectedLabel => {
-    if (detectedLabel) {
-      const currentDb = readDb();
-      const s = currentDb.screenshots.find(item => item.id === screenshotId);
-      if (s) {
-        s.question = detectedLabel;
-        writeDb(currentDb);
-        console.log(`[Auto-Capture OCR Updated] Screenshot ${screenshotId} label updated to ${detectedLabel}`);
-      }
+  // Background AI Auto-Solver & OCR (Non-blocking)
+  solveQuestionWithGemini(req.file.path).then(aiResult => {
+    const currentDb = readDb();
+    const s = currentDb.screenshots.find(item => item.id === screenshotId);
+    if (s && aiResult) {
+      if (aiResult.question) s.question = aiResult.question;
+      if (aiResult.answer) s.answer = aiResult.answer;
+      if (aiResult.explanation) s.note = aiResult.explanation;
+      writeDb(currentDb);
+      console.log(`[Auto-Capture AI Auto-Solved] Screenshot ${screenshotId} -> Question: ${s.question}, Answer: ${s.answer}`);
+    } else {
+      // Fallback OCR
+      detectQuestionNumber(req.file.path).then(detectedLabel => {
+        if (detectedLabel) {
+          const currentDb2 = readDb();
+          const s2 = currentDb2.screenshots.find(item => item.id === screenshotId);
+          if (s2) {
+            s2.question = detectedLabel;
+            writeDb(currentDb2);
+          }
+        }
+      });
     }
   }).catch(err => {
-    console.error(`[Auto-Capture OCR Error] Screenshot ${screenshotId}:`, err);
+    console.error(`[Auto-Capture AI Error] Screenshot ${screenshotId}:`, err);
   });
 });
 
