@@ -58,6 +58,10 @@ const UPLOADS_DIR = isServerless ? path.join(os.tmpdir(), 'uploads') : path.join
 app.use('/uploads', express.static(UPLOADS_DIR));
 app.use(express.static(path.join(__dirname, 'public'), { index: false }));
 
+const CLOUD_DB_URL = 'https://jsonblob.com/api/jsonBlob/019fa270-ee1a-7677-87b4-d2fdb42df8b4';
+let memoryDb = null;
+let isSyncingCloud = false;
+
 // Ensure upload folder exists safely
 try {
   if (!fs.existsSync(UPLOADS_DIR)) {
@@ -66,10 +70,6 @@ try {
 } catch (err) {
   console.error("Uploads directory creation warning:", err.message);
 }
-
-const CLOUD_DB_URL = 'https://jsonblob.com/api/jsonBlob/019fa270-ee1a-7677-87b4-d2fdb42df8b4';
-let memoryDb = null;
-let isSyncingCloud = false;
 
 // Async initial load from Cloud DB on server startup
 async function initCloudDb() {
@@ -91,6 +91,13 @@ async function initCloudDb() {
 
 // Initial sync on module load
 initCloudDb();
+
+async function ensureCloudDbLoaded() {
+  if (!memoryDb || !Array.isArray(memoryDb.keys) || memoryDb.keys.length === 0) {
+    await initCloudDb();
+  }
+  return readDb();
+}
 
 function readDb() {
   if (memoryDb) {
@@ -129,8 +136,8 @@ function writeDb(data) {
     isSyncingCloud = true;
     setTimeout(async () => {
       try {
-        const fetch = (await import('node-fetch')).default || globalThis.fetch;
-        await fetch(CLOUD_DB_URL, {
+        const fetchFn = globalThis.fetch || (await import('node-fetch')).default;
+        await fetchFn(CLOUD_DB_URL, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(memoryDb)
@@ -141,7 +148,7 @@ function writeDb(data) {
       } finally {
         isSyncingCloud = false;
       }
-    }, 300);
+    }, 100);
   }
 }
 
@@ -229,8 +236,8 @@ app.post('/api/generate-key', (req, res) => {
 });
 
 // Admin & Support: Get all active keys + any keys with uploaded screenshots
-app.get('/api/keys', (req, res) => {
-  const db = readDb();
+app.get('/api/keys', async (req, res) => {
+  const db = await ensureCloudDbLoaded();
   const keyMap = new Map();
 
   // 1. Add all keys from db.keys
