@@ -5,7 +5,6 @@ const path = require('path');
 const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 const AdmZip = require('adm-zip');
-const Tesseract = require('tesseract.js');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -363,54 +362,7 @@ app.get('/api/verify-key', (req, res) => {
   });
 });
 
-// --- OCR & Question Detection Helpers ---
-async function detectQuestionNumber(imagePath) {
-  try {
-    if (!fs.existsSync(imagePath)) return null;
-
-    const { data: { text } } = await Tesseract.recognize(imagePath, 'eng', {
-      langPath: __dirname,
-      logger: () => {}
-    });
-
-    if (!text || !text.trim()) return null;
-
-    console.log(`[OCR Output]: ${text.substring(0, 150).replace(/\s+/g, ' ')}...`);
-
-    // 1. Regex match: "Câu 1", "Cau 12", "Câù 5", "Question 3", "Bài 1", "Câu hỏi 1", "Câu số 1"
-    const match1 = text.match(/(?:c[aâàáảãạäiu]+u|question|bà[iì]|bai)\s*(?:h[ỏo]i|s[ốo])?\s*[:\.\-\#\)]?\s*(\d+)/i);
-    if (match1 && match1[1]) {
-      const qNum = parseInt(match1[1], 10);
-      if (qNum > 0 && qNum <= 500) {
-        return `Câu ${qNum}`;
-      }
-    }
-
-    // 2. Regex match: "1/50" or "Câu 1/50" pattern
-    const match2 = text.match(/(?:câu|cau|question)?\s*(\d+)\s*\/\s*\d+/i);
-    if (match2 && match2[1]) {
-      const qNum = parseInt(match2[1], 10);
-      if (qNum > 0 && qNum <= 500) {
-        return `Câu ${qNum}`;
-      }
-    }
-
-    // 3. Regex match: Standalone "1." or "1:" at start of a line
-    const match3 = text.match(/(?:^|\n)\s*(\d+)\s*[\.\:\)]\s+/);
-    if (match3 && match3[1]) {
-      const qNum = parseInt(match3[1], 10);
-      if (qNum > 0 && qNum <= 500) {
-        return `Câu ${qNum}`;
-      }
-    }
-
-    return null;
-  } catch (err) {
-    console.error("[OCR Exception]:", err.message || err);
-    return null;
-  }
-}
-
+// --- Image Comparison Helper ---
 function calculateImageDiff(path1, path2) {
   try {
     if (!fs.existsSync(path1) || !fs.existsSync(path2)) return 1.0;
@@ -562,7 +514,7 @@ app.post('/api/upload-screenshot', upload.single('image'), (req, res) => {
     message: "Screenshot uploaded successfully"
   });
 
-  // Background AI Auto-Solver & OCR (Non-blocking)
+  // Background AI Auto-Solver (Non-blocking)
   solveQuestionWithGemini(req.file.path).then(aiResult => {
     const currentDb = readDb();
     const s = currentDb.screenshots.find(item => item.id === screenshotId);
@@ -572,18 +524,6 @@ app.post('/api/upload-screenshot', upload.single('image'), (req, res) => {
       if (aiResult.explanation) s.note = aiResult.explanation;
       writeDb(currentDb);
       console.log(`[AI Auto-Solved] Screenshot ${screenshotId} -> Question: ${s.question}, Answer: ${s.answer}`);
-    } else {
-      // Fallback: OCR question detection if AI API key is not configured
-      detectQuestionNumber(req.file.path).then(detectedLabel => {
-        if (detectedLabel) {
-          const currentDb2 = readDb();
-          const s2 = currentDb2.screenshots.find(item => item.id === screenshotId);
-          if (s2) {
-            s2.question = detectedLabel;
-            writeDb(currentDb2);
-          }
-        }
-      });
     }
   }).catch(err => {
     console.error(`[AI Solver Error] Screenshot ${screenshotId}:`, err);
@@ -642,7 +582,7 @@ app.post('/api/auto-capture', upload.single('image'), async (req, res) => {
     message: "New question captured!"
   });
 
-  // Background AI Auto-Solver & OCR (Non-blocking)
+  // Background AI Auto-Solver (Non-blocking)
   solveQuestionWithGemini(req.file.path).then(aiResult => {
     const currentDb = readDb();
     const s = currentDb.screenshots.find(item => item.id === screenshotId);
@@ -652,18 +592,6 @@ app.post('/api/auto-capture', upload.single('image'), async (req, res) => {
       if (aiResult.explanation) s.note = aiResult.explanation;
       writeDb(currentDb);
       console.log(`[Auto-Capture AI Auto-Solved] Screenshot ${screenshotId} -> Question: ${s.question}, Answer: ${s.answer}`);
-    } else {
-      // Fallback OCR
-      detectQuestionNumber(req.file.path).then(detectedLabel => {
-        if (detectedLabel) {
-          const currentDb2 = readDb();
-          const s2 = currentDb2.screenshots.find(item => item.id === screenshotId);
-          if (s2) {
-            s2.question = detectedLabel;
-            writeDb(currentDb2);
-          }
-        }
-      });
     }
   }).catch(err => {
     console.error(`[Auto-Capture AI Error] Screenshot ${screenshotId}:`, err);
