@@ -48,7 +48,7 @@
   <script type="text/babel">
     const { useState, useEffect, useRef } = React;
 
-    const API_BASE = 'http://localhost:5000';
+    const API_BASE = window.location.origin;
 
     function formatImageSrc(imgStr) {
       if (!imgStr) return '';
@@ -79,24 +79,37 @@
         fetchScreenshots('');
         fetchChatMessages('');
 
-        const ws = new WebSocket(`ws://${window.location.hostname}:5000`);
-        ws.onmessage = (event) => {
-          try {
-            const msg = JSON.parse(event.data);
-            if (msg.type === 'NEW_SCREENSHOT') {
-              if (msg.data && msg.data.key) setActiveSupportKey(msg.data.key);
-              setScreenshots(prev => [msg.data, ...prev]);
-            } else if (msg.type === 'CHAT_MESSAGE') {
-              setChatMessages(prev => [msg, ...prev]);
-            } else if (msg.type === 'SESSION_CLEARED') {
-              setScreenshots([]);
-              setChatMessages([]);
-              setSelectedShot(null);
-            }
-          } catch(e){}
-        };
+        // Automatic 3s polling fallback for cloud hosts without WebSocket
+        const timer = setInterval(() => {
+          fetchScreenshots(activeSupportKey);
+          fetchChatMessages(activeSupportKey);
+        }, 3000);
 
-        return () => ws.close();
+        let ws = null;
+        try {
+          const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+          ws = new WebSocket(`${wsProtocol}//${window.location.host}`);
+          ws.onmessage = (event) => {
+            try {
+              const msg = JSON.parse(event.data);
+              if (msg.type === 'NEW_SCREENSHOT') {
+                if (msg.data && msg.data.key) setActiveSupportKey(msg.data.key);
+                setScreenshots(prev => [msg.data, ...prev]);
+              } else if (msg.type === 'CHAT_MESSAGE') {
+                setChatMessages(prev => [msg, ...prev]);
+              } else if (msg.type === 'SESSION_CLEARED') {
+                setScreenshots([]);
+                setChatMessages([]);
+                setSelectedShot(null);
+              }
+            } catch(e){}
+          };
+        } catch(ex){}
+
+        return () => {
+          clearInterval(timer);
+          if (ws) { try { ws.close(); } catch(e){} }
+        };
       }, [activeSupportKey]);
 
       useEffect(() => {
@@ -109,10 +122,11 @@
         try {
           const url = key ? `${API_BASE}/api/session/screenshots?key=${encodeURIComponent(key)}` : `${API_BASE}/api/session/screenshots`;
           const res = await fetch(url);
-          const data = await res.json();
-          setScreenshots(data);
-          if (data.length > 0) setSelectedShot(data[0]);
-          else setSelectedShot(null);
+          if (res.ok) {
+            const data = await res.json();
+            setScreenshots(data);
+            if (data.length > 0 && !selectedShot) setSelectedShot(data[0]);
+          }
         } catch(e){}
       };
 
@@ -120,8 +134,10 @@
         try {
           const url = key ? `${API_BASE}/api/chat/messages?key=${encodeURIComponent(key)}` : `${API_BASE}/api/chat/messages`;
           const res = await fetch(url);
-          const data = await res.json();
-          setChatMessages(data);
+          if (res.ok) {
+            const data = await res.json();
+            setChatMessages(data);
+          }
         } catch(e){}
       };
 

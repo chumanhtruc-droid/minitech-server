@@ -79,9 +79,16 @@
         fetchScreenshots('');
         fetchChatMessages('');
 
+        // Automatic 3s polling fallback for cloud hosts without WebSocket
+        const timer = setInterval(() => {
+          fetchScreenshots(activeSupportKey);
+          fetchChatMessages(activeSupportKey);
+        }, 3000);
+
+        let ws = null;
         try {
           const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-          const ws = new WebSocket(`${wsProtocol}//${window.location.host}`);
+          ws = new WebSocket(`${wsProtocol}//${window.location.host}`);
           ws.onmessage = (event) => {
             try {
               const msg = JSON.parse(event.data);
@@ -97,8 +104,12 @@
               }
             } catch(e){}
           };
-          return () => ws.close();
         } catch(ex){}
+
+        return () => {
+          clearInterval(timer);
+          if (ws) { try { ws.close(); } catch(e){} }
+        };
       }, [activeSupportKey]);
 
       useEffect(() => {
@@ -111,10 +122,11 @@
         try {
           const url = key ? `${API_BASE}/api/session/screenshots?key=${encodeURIComponent(key)}` : `${API_BASE}/api/session/screenshots`;
           const res = await fetch(url);
-          const data = await res.json();
-          setScreenshots(data);
-          if (data.length > 0) setSelectedShot(data[0]);
-          else setSelectedShot(null);
+          if (res.ok) {
+            const data = await res.json();
+            setScreenshots(data);
+            if (data.length > 0 && !selectedShot) setSelectedShot(data[0]);
+          }
         } catch(e){}
       };
 
@@ -122,8 +134,10 @@
         try {
           const url = key ? `${API_BASE}/api/chat/messages?key=${encodeURIComponent(key)}` : `${API_BASE}/api/chat/messages`;
           const res = await fetch(url);
-          const data = await res.json();
-          setChatMessages(data);
+          if (res.ok) {
+            const data = await res.json();
+            setChatMessages(data);
+          }
         } catch(e){}
       };
 
