@@ -53,8 +53,8 @@ function getRemainingTimeText(expDateStr) {
   return `Còn ${hours} giờ`;
 }
 
-// Global Storage
-let keys = [
+// Initial Default Database
+const DEFAULT_KEYS = [
   {
     id: 1,
     key: 'MINI-DAY-2026-X89K-912A',
@@ -90,33 +90,46 @@ let keys = [
   }
 ];
 
+let keys = DEFAULT_KEYS;
 let screenshots = [];
 let chatMessages = [];
 let auditLogs = [
   { id: 1, timestamp: new Date().toISOString(), action: 'SYSTEM_START', actor: 'System', details: 'Server MiniTech Support đã khởi động.' }
 ];
 
-// Ephemeral /tmp file sync for Vercel lambdas
-const TEMP_DATA_FILE = path.join('/tmp', 'minitech_session.json');
+// Persistent File Storage (Works 100% on continuous servers & local)
+const DB_FILE = path.join(__dirname, 'db.json');
+const ALT_DB_FILE = path.join('/tmp', 'minitech_db.json');
 
-function saveToTempFile() {
+function saveDatabase() {
   try {
-    const payload = JSON.stringify({ screenshots, chatMessages, keys, auditLogs });
-    fs.writeFileSync(TEMP_DATA_FILE, payload);
+    const data = JSON.stringify({ keys, screenshots, chatMessages, auditLogs }, null, 2);
+    try { fs.writeFileSync(DB_FILE, data); } catch (ex1) {}
+    try { fs.writeFileSync(ALT_DB_FILE, data); } catch (ex2) {}
   } catch (e) {}
 }
 
-function loadFromTempFile() {
+function loadDatabase() {
   try {
-    if (fs.existsSync(TEMP_DATA_FILE)) {
-      const content = fs.readFileSync(TEMP_DATA_FILE, 'utf8');
-      const parsed = JSON.parse(content);
-      if (parsed.screenshots && parsed.screenshots.length > screenshots.length) screenshots = parsed.screenshots;
-      if (parsed.chatMessages && parsed.chatMessages.length > chatMessages.length) chatMessages = parsed.chatMessages;
-      if (parsed.keys && parsed.keys.length > keys.length) keys = parsed.keys;
+    let raw = null;
+    if (fs.existsSync(DB_FILE)) {
+      raw = fs.readFileSync(DB_FILE, 'utf8');
+    } else if (fs.existsSync(ALT_DB_FILE)) {
+      raw = fs.readFileSync(ALT_DB_FILE, 'utf8');
+    }
+
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed.keys) && parsed.keys.length > 0) keys = parsed.keys;
+      if (Array.isArray(parsed.screenshots)) screenshots = parsed.screenshots;
+      if (Array.isArray(parsed.chatMessages)) chatMessages = parsed.chatMessages;
+      if (Array.isArray(parsed.auditLogs)) auditLogs = parsed.auditLogs;
     }
   } catch (e) {}
 }
+
+// Load database on startup
+loadDatabase();
 
 let wsClients = new Set();
 
@@ -137,8 +150,15 @@ function broadcast(data) {
 function addLog(action, actor, details) {
   const log = { id: auditLogs.length + 1, timestamp: new Date().toISOString(), action, actor, details };
   auditLogs.unshift(log);
-  saveToTempFile();
+  saveDatabase();
 }
+
+// Self Keep-Alive Ping every 4 minutes to prevent Render cold-starts
+setInterval(() => {
+  try {
+    http.get('http://127.0.0.1:' + PORT + '/api/admin/stats', () => {});
+  } catch (e) {}
+}, 4 * 60 * 1000);
 
 // -------------------------------------------------------------
 // 1. ADMIN LOGIN API
@@ -160,7 +180,7 @@ app.post('/api/admin/login', (req, res) => {
 // 2. CLIENT AUTH API - CLEARS ALL SCREENSHOTS & CHAT ON VALIDATION
 // -------------------------------------------------------------
 app.post('/api/auth/validate-key', (req, res) => {
-  loadFromTempFile();
+  loadDatabase();
   const rawKey = req.body.key || req.body.Key;
   const machineName = req.body.machineName || req.body.MachineName || 'ClientPC';
   const windowsUser = req.body.windowsUser || req.body.WindowsUser || 'User';
@@ -197,7 +217,7 @@ app.post('/api/auth/validate-key', (req, res) => {
   // WIPE ALL SCREENSHOTS AND CHAT MESSAGES ON EVERY KEY VALIDATION
   screenshots = [];
   chatMessages = [];
-  saveToTempFile();
+  saveDatabase();
   broadcast({ type: 'SESSION_CLEARED' });
 
   const remainingText = getRemainingTimeText(foundKey.expirationDate);
@@ -222,7 +242,7 @@ app.post('/api/auth/validate-key', (req, res) => {
 // 3. SCREENSHOT API
 // -------------------------------------------------------------
 app.post('/api/session/upload-screenshot', (req, res) => {
-  loadFromTempFile();
+  loadDatabase();
   const rawKey = req.body.key || req.body.Key;
   const machineName = req.body.machineName || req.body.MachineName || 'ClientPC';
   const windowsUser = req.body.windowsUser || req.body.WindowsUser || 'User';
@@ -253,7 +273,7 @@ app.post('/api/session/upload-screenshot', (req, res) => {
   };
 
   screenshots.unshift(newShot);
-  saveToTempFile();
+  saveDatabase();
   addLog('SCREENSHOT_UPLOAD', `${machineName}\\${windowsUser}`, `Chụp ảnh màn hình mới cho Key ${rawKey}`);
 
   broadcast({ type: 'NEW_SCREENSHOT', data: newShot });
@@ -266,7 +286,7 @@ app.post('/api/session/upload-screenshot', (req, res) => {
 });
 
 app.get('/api/session/screenshots', (req, res) => {
-  loadFromTempFile();
+  loadDatabase();
   const { key } = req.query;
   if (!key) return res.json(screenshots);
 
@@ -280,7 +300,7 @@ app.get('/api/session/screenshots', (req, res) => {
 // 4. 2-WAY REALTIME CHAT API
 // -------------------------------------------------------------
 app.post('/api/chat/send', (req, res) => {
-  loadFromTempFile();
+  loadDatabase();
   const key = (req.body.key || req.body.Key || '').trim().toUpperCase();
   const sender = req.body.sender || req.body.Sender || 'Support';
   const text = (req.body.text || req.body.Text || '').trim();
@@ -296,7 +316,7 @@ app.post('/api/chat/send', (req, res) => {
   };
 
   chatMessages.unshift(msgObj);
-  saveToTempFile();
+  saveDatabase();
   addLog('CHAT_MSG', sender, `[Key ${key}]: ${text}`);
 
   broadcast({
@@ -312,7 +332,7 @@ app.post('/api/chat/send', (req, res) => {
 });
 
 app.get('/api/chat/latest', (req, res) => {
-  loadFromTempFile();
+  loadDatabase();
   const key = (req.query.key || '').trim().toUpperCase();
   let list = [];
   if (key) {
@@ -338,7 +358,7 @@ app.get('/api/chat/latest', (req, res) => {
 });
 
 app.get('/api/chat/messages', (req, res) => {
-  loadFromTempFile();
+  loadDatabase();
   const key = (req.query.key || '').trim().toUpperCase();
   let list = [];
   if (key) {
@@ -352,7 +372,7 @@ app.get('/api/chat/messages', (req, res) => {
 
 // Legacy note endpoint
 app.post('/api/session/notes', (req, res) => {
-  loadFromTempFile();
+  loadDatabase();
   const screenshotId = req.body.screenshotId || req.body.ScreenshotId;
   const note = req.body.note || req.body.Note;
   const author = req.body.author || req.body.Author;
@@ -371,7 +391,7 @@ app.post('/api/session/notes', (req, res) => {
     timestamp: new Date().toISOString()
   };
   chatMessages.unshift(msgObj);
-  saveToTempFile();
+  saveDatabase();
 
   broadcast({
     type: 'CHAT_MESSAGE',
@@ -393,12 +413,12 @@ app.get('/api/session/latest-note', (req, res) => {
 // 5. ADMIN KEY MANAGEMENT API
 // -------------------------------------------------------------
 app.get('/api/admin/keys', (req, res) => {
-  loadFromTempFile();
+  loadDatabase();
   res.json(keys);
 });
 
 app.post('/api/admin/keys', (req, res) => {
-  loadFromTempFile();
+  loadDatabase();
   const { type, customDays, note, keyStr } = req.body;
 
   let days = 30;
@@ -426,27 +446,27 @@ app.post('/api/admin/keys', (req, res) => {
     keys.unshift(newKey);
   }
 
-  saveToTempFile();
+  saveDatabase();
   addLog('KEY_CREATED', 'Admin', `Tạo mới Key ${newKey.key} (${newKey.type})`);
 
   return res.json({ success: true, key: newKey });
 });
 
 app.put('/api/admin/keys/:id/toggle-status', (req, res) => {
-  loadFromTempFile();
+  loadDatabase();
   const id = parseInt(req.params.id);
   const found = keys.find(k => k.id === id);
   if (!found) return res.status(404).json({ success: false, message: 'Key không tồn tại' });
 
   found.status = found.status === 'Active' ? 'Disabled' : 'Active';
-  saveToTempFile();
+  saveDatabase();
   addLog('KEY_STATUS_CHANGED', 'Admin', `Đổi trạng thái Key ${found.key} sang ${found.status}`);
 
   return res.json({ success: true, key: found });
 });
 
 app.put('/api/admin/keys/:id/extend', (req, res) => {
-  loadFromTempFile();
+  loadDatabase();
   const id = parseInt(req.params.id);
   const { days } = req.body;
   const found = keys.find(k => k.id === id);
@@ -457,27 +477,27 @@ app.put('/api/admin/keys/:id/extend', (req, res) => {
   const baseDate = currentExp > new Date() ? currentExp : new Date();
   found.expirationDate = new Date(baseDate.getTime() + addDays * 86400000).toISOString();
 
-  saveToTempFile();
+  saveDatabase();
   addLog('KEY_EXTENDED', 'Admin', `Gia hạn Key ${found.key} thêm ${addDays} ngày.`);
 
   return res.json({ success: true, key: found });
 });
 
 app.delete('/api/admin/keys/:id', (req, res) => {
-  loadFromTempFile();
+  loadDatabase();
   const id = parseInt(req.params.id);
   const idx = keys.findIndex(k => k.id === id);
   if (idx === -1) return res.status(404).json({ success: false, message: 'Key không tồn tại' });
 
   const removed = keys.splice(idx, 1)[0];
-  saveToTempFile();
+  saveDatabase();
   addLog('KEY_DELETED', 'Admin', `Xóa Key ${removed.key}`);
 
   return res.json({ success: true, message: 'Đã xóa Key.' });
 });
 
 app.get('/api/admin/stats', (req, res) => {
-  loadFromTempFile();
+  loadDatabase();
   const totalKeys = keys.length;
   const activeKeys = keys.filter(k => k.status === 'Active' && new Date(k.expirationDate) > new Date()).length;
   const totalScreenshots = screenshots.length;
@@ -493,7 +513,7 @@ app.get('/api/admin/stats', (req, res) => {
 });
 
 app.get('/api/admin/logs', (req, res) => {
-  loadFromTempFile();
+  loadDatabase();
   res.json(auditLogs);
 });
 
