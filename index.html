@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="vi" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MiniTech Support - Web Viewer Portal</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: { sans: ['Inter', 'sans-serif'] },
+          colors: {
+            brand: {
+              50: '#e6f4ff',
+              500: '#0078d4',
+              600: '#0063b1',
+              700: '#004e8c'
+            },
+            dark: {
+              900: '#090d16',
+              800: '#111827',
+              700: '#1f293d',
+              600: '#334155'
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body { background-color: #090d16; color: #f3f4f6; font-family: 'Inter', sans-serif; }
+    .glass { background: rgba(17, 24, 39, 0.75); backdrop-filter: blur(16px); border: 1px solid rgba(255, 255, 255, 0.1); }
+    .glass-card { background: rgba(31, 41, 61, 0.6); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.08); }
+    .glow-blue { box-shadow: 0 0 25px -5px rgba(0, 120, 212, 0.4); }
+  </style>
+</head>
+<body class="min-h-screen">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useRef } = React;
+
+    const API_BASE = 'http://localhost:5000';
+
+    function formatImageSrc(imgStr) {
+      if (!imgStr) return '';
+      if (imgStr.startsWith('data:')) return imgStr;
+      return 'data:image/jpeg;base64,' + imgStr;
+    }
+
+    function formatDate(dateVal) {
+      if (!dateVal) return new Date().toLocaleTimeString();
+      if (typeof dateVal === 'string' && dateVal.includes('/Date(')) {
+        const timeMatch = dateVal.match(/\/Date\((\d+)\)\//);
+        if (timeMatch) return new Date(parseInt(timeMatch[1])).toLocaleTimeString();
+      }
+      const d = new Date(dateVal);
+      return isNaN(d.getTime()) ? new Date().toLocaleTimeString() : d.toLocaleTimeString();
+    }
+
+    function App() {
+      const [screenshots, setScreenshots] = useState([]);
+      const [chatMessages, setChatMessages] = useState([]);
+      const [activeSupportKey, setActiveSupportKey] = useState('');
+      const [selectedShot, setSelectedShot] = useState(null);
+      const [chatInputText, setChatInputText] = useState('');
+
+      const chatEndRef = useRef(null);
+
+      useEffect(() => {
+        fetchScreenshots('');
+        fetchChatMessages('');
+
+        const ws = new WebSocket(`ws://${window.location.hostname}:5000`);
+        ws.onmessage = (event) => {
+          try {
+            const msg = JSON.parse(event.data);
+            if (msg.type === 'NEW_SCREENSHOT') {
+              if (msg.data && msg.data.key) setActiveSupportKey(msg.data.key);
+              setScreenshots(prev => [msg.data, ...prev]);
+            } else if (msg.type === 'CHAT_MESSAGE') {
+              setChatMessages(prev => [msg, ...prev]);
+            } else if (msg.type === 'SESSION_CLEARED') {
+              setScreenshots([]);
+              setChatMessages([]);
+              setSelectedShot(null);
+            }
+          } catch(e){}
+        };
+
+        return () => ws.close();
+      }, [activeSupportKey]);
+
+      useEffect(() => {
+        if (chatEndRef.current) {
+          chatEndRef.current.scrollIntoView({ behavior: 'smooth' });
+        }
+      }, [chatMessages]);
+
+      const fetchScreenshots = async (key) => {
+        try {
+          const url = key ? `${API_BASE}/api/session/screenshots?key=${encodeURIComponent(key)}` : `${API_BASE}/api/session/screenshots`;
+          const res = await fetch(url);
+          const data = await res.json();
+          setScreenshots(data);
+          if (data.length > 0) setSelectedShot(data[0]);
+          else setSelectedShot(null);
+        } catch(e){}
+      };
+
+      const fetchChatMessages = async (key) => {
+        try {
+          const url = key ? `${API_BASE}/api/chat/messages?key=${encodeURIComponent(key)}` : `${API_BASE}/api/chat/messages`;
+          const res = await fetch(url);
+          const data = await res.json();
+          setChatMessages(data);
+        } catch(e){}
+      };
+
+      const handleSendSupportChat = async (textToSend) => {
+        const messageText = textToSend || chatInputText;
+        if (!messageText.trim()) return;
+        try {
+          await fetch(`${API_BASE}/api/chat/send`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ key: activeSupportKey, sender: 'Support', text: messageText.trim() })
+          });
+          setChatInputText('');
+          fetchChatMessages(activeSupportKey);
+        } catch(e){}
+      };
+
+      const handleDownloadZip = async () => {
+        if (screenshots.length === 0) {
+          alert("Chưa có ảnh nào để tải về.");
+          return;
+        }
+
+        const zip = new JSZip();
+        const imgFolder = zip.folder(`Support_Screenshots_${activeSupportKey || 'Session'}`);
+
+        const ordered = [...screenshots].reverse();
+
+        ordered.forEach((s, idx) => {
+          let base64Data = s.imageBase64 || '';
+          if (base64Data.includes(',')) {
+            base64Data = base64Data.split(',')[1];
+          }
+          if (base64Data) {
+            imgFolder.file(`Anh_${idx + 1}.jpg`, base64Data, { base64: true });
+          }
+        });
+
+        const content = await zip.generateAsync({ type: 'blob' });
+        saveAs(content, `MiniTech_Photos_${activeSupportKey || 'All'}.zip`);
+      };
+
+      const getScreenshotLabel = (shot) => {
+        if (!shot) return 'Ảnh #1';
+        const ordered = [...screenshots].reverse();
+        const idx = ordered.findIndex(s => s.id === shot.id);
+        return `Ảnh #${idx !== -1 ? idx + 1 : 1}`;
+      };
+
+      return (
+        <div className="flex flex-col min-h-screen">
+          {/* Support Header Bar */}
+          <header className="glass sticky top-0 z-50 border-b border-gray-800 px-6 py-4 flex items-center justify-between">
+            <div className="flex items-center space-x-3">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-brand-600 to-blue-400 flex items-center justify-center font-bold text-white shadow-lg glow-blue text-xl">
+                M
+              </div>
+              <div>
+                <h1 className="font-bold text-lg text-white tracking-wide">MiniTech Support Viewer</h1>
+                <p className="text-xs text-gray-400">Trang Hỗ Trợ Kỹ Thuật Từ Xa Realtime</p>
+              </div>
+            </div>
+
+            <div className="flex items-center space-x-4">
+              <a 
+                href="/admin.html" 
+                target="_blank"
+                className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-dark-800 text-gray-400 hover:text-white border border-gray-700 transition flex items-center space-x-1.5">
+                <span>🔒 Đăng Nhập Admin Key</span>
+              </a>
+            </div>
+          </header>
+
+          {/* Main Support Area */}
+          <main className="flex-1 p-6 max-w-7xl w-full mx-auto space-y-6">
+
+            <div className="glass-card p-4 rounded-xl flex flex-col md:flex-row items-center justify-between gap-4">
+              <div className="flex items-center space-x-3">
+                <span className="text-sm font-bold text-white">Phiên Support:</span>
+                <input 
+                  type="text" 
+                  placeholder="Mã Key..."
+                  value={activeSupportKey} 
+                  onChange={e => setActiveSupportKey(e.target.value.toUpperCase())}
+                  className="bg-dark-900 border border-gray-700 font-mono font-bold text-blue-400 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-brand-500"
+                />
+                <button 
+                  onClick={() => { fetchScreenshots(activeSupportKey); fetchChatMessages(activeSupportKey); }}
+                  className="px-3.5 py-1.5 bg-brand-600 text-white rounded-lg text-xs font-semibold hover:bg-brand-700">
+                  Tải Dữ Liệu
+                </button>
+              </div>
+              
+              <div className="flex items-center space-x-3">
+                <button 
+                  onClick={handleDownloadZip}
+                  className="px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white font-bold text-xs rounded-xl shadow-lg flex items-center space-x-2 transition">
+                  <span>📦 TẢI FILE ZIP TẤT CẢ ÁNH ({screenshots.length})</span>
+                </button>
+                <div className="flex items-center space-x-2 text-xs text-emerald-400">
+                  <span className="relative flex h-2.5 w-2.5">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+                  </span>
+                  <span>Realtime Active</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* Left Column: Image Thumbnails Stream */}
+              <div className="glass-card p-4 rounded-2xl space-y-4 max-h-[700px] overflow-y-auto">
+                <h3 className="text-xs font-bold uppercase text-gray-400 tracking-wider">Danh Sách Ảnh Chụp ({screenshots.length})</h3>
+                
+                {screenshots.length === 0 ? (
+                  <p className="text-xs text-gray-500 italic py-8 text-center">Chưa có ảnh chụp nào. Nhấn Ctrl+X trên máy client để chụp.</p>
+                ) : (
+                  screenshots.map(s => {
+                    const imgTitle = getScreenshotLabel(s);
+                    return (
+                      <div 
+                        key={s.id}
+                        onClick={() => setSelectedShot(s)}
+                        className={`p-3 rounded-xl border transition cursor-pointer flex items-center space-x-3 ${selectedShot?.id === s.id ? 'bg-brand-600/20 border-brand-500 glow-blue' : 'bg-dark-900/60 border-gray-800 hover:border-gray-700'}`}>
+                        <div className="w-16 h-12 bg-dark-800 rounded-lg overflow-hidden border border-gray-700 flex-shrink-0 flex items-center justify-center text-[10px] text-gray-500">
+                          {s.imageBase64 ? <img src={formatImageSrc(s.imageBase64)} className="w-full h-full object-cover" /> : '📷 Screen'}
+                        </div>
+                        <div className="flex-1 min-w-0 text-xs">
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold text-amber-400">{imgTitle}</span>
+                          </div>
+                          <p className="text-[11px] text-gray-400 truncate mt-0.5">👤 User: {s.windowsUser}</p>
+                          <p className="text-[10px] text-gray-500">{formatDate(s.capturedAt)}</p>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              {/* Right Column: Full Screen Viewer & 2-Way Chat Stream */}
+              <div className="lg:col-span-2 glass-card p-6 rounded-2xl flex flex-col space-y-5">
+                {selectedShot ? (
+                  <>
+                    <div className="flex items-center justify-between border-b border-gray-800 pb-3 text-xs">
+                      <div>
+                        <span className="font-bold text-white text-base">{getScreenshotLabel(selectedShot)} (ID #{selectedShot.id})</span>
+                        <p className="text-gray-400 text-[11px] mt-0.5">Máy: <strong className="text-blue-400">{selectedShot.machineName}</strong> | User: <strong>{selectedShot.windowsUser}</strong> | Thời gian: {formatDate(selectedShot.capturedAt)}</p>
+                      </div>
+                      <span className="px-3 py-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 rounded-lg font-bold">Phiên Hỗ Trợ Active</span>
+                    </div>
+
+                    {/* Full Screen Image View */}
+                    <div className="w-full h-[360px] bg-dark-900 rounded-xl overflow-hidden border border-gray-800 flex items-center justify-center relative p-2">
+                      {selectedShot.imageBase64 ? (
+                        <img src={formatImageSrc(selectedShot.imageBase64)} className="max-h-full max-w-full object-contain rounded-lg shadow-2xl" />
+                      ) : (
+                        <div className="text-center p-8 text-gray-500 text-xs">
+                          📷 Ảnh màn hình xem trước
+                        </div>
+                      )}
+                    </div>
+
+                    {/* 2-Way Realtime Chat Box */}
+                    <div className="space-y-4 bg-dark-900/90 p-5 rounded-2xl border border-gray-700 shadow-2xl">
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-xs font-bold text-amber-400 uppercase tracking-wider flex items-center space-x-2">
+                          <span>💬 KHUNG CHAT REALTIME 2 CHIỀU (NGƯỜI DÙNG BẤM PHÍM ` ĐỂ NHẮN LẠI)</span>
+                        </h4>
+                      </div>
+
+                      {/* Quick Answer Buttons (A B C D E) */}
+                      <div className="grid grid-cols-5 gap-3">
+                        {['A', 'B', 'C', 'D', 'E'].map((opt) => (
+                          <button
+                            key={opt}
+                            onClick={() => handleSendSupportChat(`Đáp án: ${opt}`)}
+                            className="py-2.5 rounded-xl font-bold text-sm bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white shadow-lg transition transform active:scale-95 border border-emerald-400/40">
+                            Gửi {opt}
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* Chat Messages Stream */}
+                      <div className="bg-dark-900 p-4 rounded-xl max-h-44 overflow-y-auto space-y-3 border border-gray-800 text-xs">
+                        {chatMessages.length === 0 ? (
+                          <p className="text-gray-500 italic text-center py-4 text-xs">Chưa có tin nhắn nào. Nhập tin nhắn bên dưới hoặc nhấp Gửi A B C D E.</p>
+                        ) : (
+                          [...chatMessages].reverse().map((msg) => (
+                            <div key={msg.id || Math.random()} className={`flex flex-col ${msg.sender === 'Support' ? 'items-end' : 'items-start'}`}>
+                              <div className={`px-4 py-2 rounded-2xl max-w-[85%] shadow ${msg.sender === 'Support' ? 'bg-brand-600 text-white rounded-br-none' : 'bg-emerald-600 text-white rounded-bl-none border border-emerald-400/30'}`}>
+                                <span className="font-bold block text-[10px] opacity-80 mb-0.5">{msg.sender === 'Support' ? '💬 Support (Bạn)' : '👤 Người Dùng (Client)'}:</span>
+                                <span className="text-xs font-semibold">{msg.text}</span>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                        <div ref={chatEndRef} />
+                      </div>
+
+                      {/* Support Message Input Form */}
+                      <div className="flex gap-2">
+                        <input 
+                          type="text"
+                          placeholder="Gõ tin nhắn gửi người dùng (Ví dụ: Đáp án: A)..."
+                          value={chatInputText}
+                          onChange={e => setChatInputText(e.target.value)}
+                          onKeyDown={e => { if (e.key === 'Enter') handleSendSupportChat(); }}
+                          className="flex-1 bg-dark-900 border border-gray-700 rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-brand-500 shadow-inner"
+                        />
+                        <button 
+                          onClick={() => handleSendSupportChat()}
+                          className="px-6 py-2.5 bg-gradient-to-r from-brand-500 to-blue-600 hover:from-brand-600 hover:to-blue-700 text-white font-bold text-xs rounded-xl transition shadow-lg flex items-center space-x-1">
+                          <span>Gửi Tin Nhắn ↵</span>
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div className="py-24 text-center text-gray-500 text-xs italic">
+                    Vui lòng chọn 1 ảnh chụp từ danh sách bên trái để xem & chat realtime.
+                  </div>
+                )}
+              </div>
+            </div>
+          </main>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
