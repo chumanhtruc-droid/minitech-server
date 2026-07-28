@@ -125,7 +125,9 @@
           if (res.ok) {
             const data = await res.json();
             setScreenshots(data);
-            if (data.length > 0 && !selectedShot) setSelectedShot(data[0]);
+            if (data.length > 0) {
+              setSelectedShot(data[0]);
+            }
           }
         } catch(e){}
       };

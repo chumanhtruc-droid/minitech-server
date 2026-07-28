@@ -257,7 +257,11 @@ app.post('/api/session/upload-screenshot', (req, res) => {
     capturedAt = new Date().toISOString();
   }
 
-  const cleanKey = (rawKey || 'MINI-DEFAULT').toUpperCase();
+  let cleanKey = (rawKey || '').trim().toUpperCase();
+  if (!cleanKey && keys.length > 0) {
+    cleanKey = keys[0].key.toUpperCase();
+  }
+  if (!cleanKey) cleanKey = 'MINI-DEFAULT';
 
   const newShot = {
     id: Date.now(),
