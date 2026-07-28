@@ -362,7 +362,7 @@ app.get('/api/session/latest-note', (req, res) => {
 app.get('/api/admin/keys', (req, res) => res.json(keys));
 
 app.post('/api/admin/keys', (req, res) => {
-  const { type, customDays, note } = req.body;
+  const { type, customDays, note, keyStr } = req.body;
 
   let days = 30;
   if (type === 'Tool Ngày') days = 1;
@@ -370,11 +370,11 @@ app.post('/api/admin/keys', (req, res) => {
   else if (type === 'Tool Kỳ') days = customDays ? parseInt(customDays) : 180;
 
   const typeTag = type === 'Tool Ngày' ? 'DAY' : (type === 'Tool Tháng' ? 'MONTH' : 'TERM');
-  const keyStr = generateLongKey(typeTag);
+  const finalKeyStr = keyStr || generateLongKey(typeTag);
 
   const newKey = {
     id: keys.length + 1,
-    key: keyStr,
+    key: finalKeyStr,
     type: type || 'Tool Tháng',
     createdAt: new Date().toISOString(),
     expirationDate: new Date(Date.now() + days * 86400000).toISOString(),
@@ -384,7 +384,11 @@ app.post('/api/admin/keys', (req, res) => {
     note: note || ''
   };
 
-  keys.unshift(newKey);
+  const existingIdx = keys.findIndex(k => k.key === finalKeyStr);
+  if (existingIdx === -1) {
+    keys.unshift(newKey);
+  }
+
   addLog('KEY_CREATED', 'Admin', `Tạo mới Key ${newKey.key} (${newKey.type})`);
 
   return res.json({ success: true, key: newKey });

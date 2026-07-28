@@ -47,6 +47,56 @@
     const { useState, useEffect } = React;
     const API_BASE = window.location.origin;
 
+    const DEFAULT_KEYS = [
+      {
+        id: 1,
+        key: 'MINI-DAY-2026-X89K-912A',
+        type: 'Tool Ngày',
+        createdAt: '2026-07-01T00:00:00.000Z',
+        expirationDate: '2026-12-31T00:00:00.000Z',
+        status: 'Active',
+        boundDeviceId: null,
+        boundMachineName: null,
+        note: 'Key dùng thử 1 ngày'
+      },
+      {
+        id: 2,
+        key: 'MINI-MONTH-2026-K92B-441F',
+        type: 'Tool Tháng',
+        createdAt: '2026-07-01T00:00:00.000Z',
+        expirationDate: '2026-08-30T00:00:00.000Z',
+        status: 'Active',
+        boundDeviceId: null,
+        boundMachineName: null,
+        note: 'Key Hỗ Trợ Kỹ Thuật VIP'
+      },
+      {
+        id: 3,
+        key: 'MINI-TERM-2026-Z77P-9002',
+        type: 'Tool Kỳ',
+        createdAt: '2026-07-01T00:00:00.000Z',
+        expirationDate: '2027-01-01T00:00:00.000Z',
+        status: 'Active',
+        boundDeviceId: null,
+        boundMachineName: null,
+        note: 'Key Hợp Đồng Kỳ 6 Tháng'
+      }
+    ];
+
+    function loadLocalKeys() {
+      try {
+        const saved = localStorage.getItem('admin_persistent_keys');
+        if (saved) return JSON.parse(saved);
+      } catch(e){}
+      return DEFAULT_KEYS;
+    }
+
+    function saveLocalKeys(keysList) {
+      try {
+        localStorage.setItem('admin_persistent_keys', JSON.stringify(keysList));
+      } catch(e){}
+    }
+
     function App() {
       const [isAuthenticated, setIsAuthenticated] = useState(false);
       const [username, setUsername] = useState('admin');
@@ -54,7 +104,7 @@
       const [loginError, setLoginError] = useState('');
 
       const [activeTab, setActiveTab] = useState('admin-keys');
-      const [keys, setKeys] = useState([]);
+      const [keys, setKeys] = useState(loadLocalKeys());
       const [stats, setStats] = useState({});
       const [logs, setLogs] = useState([]);
       const [searchQuery, setSearchQuery] = useState('');
@@ -113,67 +163,139 @@
       const fetchKeys = async () => {
         try {
           const res = await fetch(`${API_BASE}/api/admin/keys`);
-          const data = await res.json();
-          setKeys(data);
+          if (res.ok) {
+            const serverKeys = await res.json();
+            if (Array.isArray(serverKeys) && serverKeys.length > 0) {
+              const localSaved = loadLocalKeys();
+              const mergedMap = new Map();
+              serverKeys.forEach(k => mergedMap.set(k.key, k));
+              localSaved.forEach(k => {
+                if (!mergedMap.has(k.key)) mergedMap.set(k.key, k);
+              });
+              const mergedList = Array.from(mergedMap.values());
+              setKeys(mergedList);
+              saveLocalKeys(mergedList);
+              return;
+            }
+          }
         } catch(e){}
+        setKeys(loadLocalKeys());
       };
 
       const fetchStats = async () => {
         try {
           const res = await fetch(`${API_BASE}/api/admin/stats`);
-          const data = await res.json();
-          setStats(data);
+          if (res.ok) {
+            const data = await res.json();
+            setStats(data);
+          }
         } catch(e){}
       };
 
       const fetchLogs = async () => {
         try {
           const res = await fetch(`${API_BASE}/api/admin/logs`);
-          const data = await res.json();
-          setLogs(data);
+          if (res.ok) {
+            const data = await res.json();
+            setLogs(data);
+          }
         } catch(e){}
       };
 
       const handleCreateKey = async () => {
         try {
+          let days = 30;
+          if (newKeyType === 'Tool Ngày') days = 1;
+          else if (newKeyType === 'Tool Tháng') days = 30;
+          else if (newKeyType === 'Tool Kỳ') days = newKeyDays ? parseInt(newKeyDays) : 180;
+
+          const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+          let p1 = '', p2 = '';
+          for (let i = 0; i < 4; i++) {
+            p1 += chars.charAt(Math.floor(Math.random() * chars.length));
+            p2 += chars.charAt(Math.floor(Math.random() * chars.length));
+          }
+          const typeTag = newKeyType === 'Tool Ngày' ? 'DAY' : (newKeyType === 'Tool Tháng' ? 'MONTH' : 'TERM');
+          const generatedKeyStr = `MINI-${typeTag}-2026-${p1}-${p2}`;
+
+          const localNewKey = {
+            id: Date.now(),
+            key: generatedKeyStr,
+            type: newKeyType || 'Tool Tháng',
+            createdAt: new Date().toISOString(),
+            expirationDate: new Date(Date.now() + days * 86400000).toISOString(),
+            status: 'Active',
+            boundDeviceId: null,
+            boundMachineName: null,
+            note: newKeyNote || ''
+          };
+
+          const updatedList = [localNewKey, ...keys];
+          setKeys(updatedList);
+          saveLocalKeys(updatedList);
+
           await fetch(`${API_BASE}/api/admin/keys`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ type: newKeyType, customDays: newKeyDays, note: newKeyNote })
+            body: JSON.stringify({ type: newKeyType, customDays: newKeyDays, note: newKeyNote, keyStr: generatedKeyStr })
           });
+
           setShowCreateModal(false);
-          fetchKeys();
-          fetchStats();
-        } catch(e){}
+          setNewKeyNote('');
+        } catch(e){
+          setShowCreateModal(false);
+        }
       };
 
       const handleToggleStatus = async (id) => {
         try {
+          const updatedList = keys.map(k => {
+            if (k.id === id) {
+              return { ...k, status: k.status === 'Active' ? 'Disabled' : 'Active' };
+            }
+            return k;
+          });
+          setKeys(updatedList);
+          saveLocalKeys(updatedList);
+
           await fetch(`${API_BASE}/api/admin/keys/${id}/toggle-status`, { method: 'PUT' });
-          fetchKeys();
-          fetchStats();
         } catch(e){}
       };
 
       const handleExtendKey = async (id) => {
-        const days = prompt("Nhập số ngày muốn gia hạn thêm:", "30");
-        if (!days) return;
+        const daysStr = prompt("Nhập số ngày muốn gia hạn thêm:", "30");
+        if (!daysStr) return;
+        const addDays = parseInt(daysStr) || 30;
+
         try {
+          const updatedList = keys.map(k => {
+            if (k.id === id) {
+              const currentExp = new Date(k.expirationDate);
+              const baseDate = currentExp > new Date() ? currentExp : new Date();
+              const newExp = new Date(baseDate.getTime() + addDays * 86400000).toISOString();
+              return { ...k, expirationDate: newExp };
+            }
+            return k;
+          });
+          setKeys(updatedList);
+          saveLocalKeys(updatedList);
+
           await fetch(`${API_BASE}/api/admin/keys/${id}/extend`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ days: parseInt(days) })
+            body: JSON.stringify({ days: addDays })
           });
-          fetchKeys();
         } catch(e){}
       };
 
       const handleDeleteKey = async (id) => {
         if (!confirm("Bạn có chắc chắn muốn xóa Key này không?")) return;
         try {
+          const updatedList = keys.filter(k => k.id !== id);
+          setKeys(updatedList);
+          saveLocalKeys(updatedList);
+
           await fetch(`${API_BASE}/api/admin/keys/${id}`, { method: 'DELETE' });
-          fetchKeys();
-          fetchStats();
         } catch(e){}
       };
 
@@ -296,12 +418,12 @@
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
                   <div className="glass-card p-5 rounded-2xl">
                     <p className="text-xs text-gray-400 uppercase font-semibold">Tổng Số Key System</p>
-                    <h3 className="text-3xl font-bold text-white mt-2">{stats.totalKeys || 0}</h3>
+                    <h3 className="text-3xl font-bold text-white mt-2">{keys.length}</h3>
                     <p className="text-xs text-blue-400 mt-1">🔑 Tạo từ Admin Portal</p>
                   </div>
                   <div className="glass-card p-5 rounded-2xl">
                     <p className="text-xs text-gray-400 uppercase font-semibold">Key Active Hoạt Động</p>
-                    <h3 className="text-3xl font-bold text-emerald-400 mt-2">{stats.activeKeys || 0}</h3>
+                    <h3 className="text-3xl font-bold text-emerald-400 mt-2">{keys.filter(k=>k.status==='Active').length}</h3>
                     <p className="text-xs text-emerald-500 mt-1">● Đang khả dụng</p>
                   </div>
                   <div className="glass-card p-5 rounded-2xl">
@@ -311,7 +433,7 @@
                   </div>
                   <div className="glass-card p-5 rounded-2xl">
                     <p className="text-xs text-gray-400 uppercase font-semibold">Thiết Bị Khóa Gắn Định</p>
-                    <h3 className="text-3xl font-bold text-amber-400 mt-2">{stats.boundDevices || 0}</h3>
+                    <h3 className="text-3xl font-bold text-amber-400 mt-2">{keys.filter(k=>k.boundDeviceId).length}</h3>
                     <p className="text-xs text-amber-400 mt-1">🛡️ Khóa 1 máy / Key</p>
                   </div>
                 </div>
@@ -395,7 +517,7 @@
                     </thead>
                     <tbody className="divide-y divide-gray-800/60">
                       {filteredKeys.map((k) => (
-                        <tr key={k.id} className="hover:bg-gray-800/40 transition">
+                        <tr key={k.id || k.key} className="hover:bg-gray-800/40 transition">
                           <td className="p-4 font-mono text-gray-500">#{k.id}</td>
                           <td className="p-4 font-mono font-bold text-blue-400">{k.key}</td>
                           <td className="p-4">
