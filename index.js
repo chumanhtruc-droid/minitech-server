@@ -17,6 +17,19 @@ app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
+// Explicit Route Handlers
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+app.get('/admin', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'admin.html'));
+});
+
+app.get('/admin.html', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'admin.html'));
+});
+
 function generateLongKey(typeTag) {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   let p1 = '', p2 = '';
@@ -442,6 +455,6 @@ app.get('/api/admin/logs', (req, res) => res.json(auditLogs));
 server.listen(PORT, () => {
   console.log(`=================================================`);
   console.log(`  MiniTech Support Backend running on port ${PORT}`);
-  console.log(`  Keep-Alive Active to prevent Sleep Mode        `);
+  console.log(`  Explicit Routes Registered                     `);
   console.log(`=================================================`);
 });
