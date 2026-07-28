@@ -105,6 +105,13 @@ function addLog(action, actor, details) {
   auditLogs.unshift(log);
 }
 
+// Self Keep-Alive Ping every 4 minutes to prevent Render Free tier cold-starts
+setInterval(() => {
+  try {
+    http.get('http://localhost:' + PORT + '/api/admin/stats', () => {});
+  } catch (e) {}
+}, 4 * 60 * 1000);
+
 // -------------------------------------------------------------
 // 1. ADMIN LOGIN API
 // -------------------------------------------------------------
@@ -435,7 +442,6 @@ app.get('/api/admin/logs', (req, res) => res.json(auditLogs));
 server.listen(PORT, () => {
   console.log(`=================================================`);
   console.log(`  MiniTech Support Backend running on port ${PORT}`);
-  console.log(`  Support Portal: http://localhost:${PORT}/      `);
-  console.log(`  Admin Key Portal: http://localhost:${PORT}/admin.html`);
+  console.log(`  Keep-Alive Active to prevent Sleep Mode        `);
   console.log(`=================================================`);
 });
