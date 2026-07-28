@@ -288,11 +288,14 @@ app.post('/api/session/upload-screenshot', (req, res) => {
 app.get('/api/session/screenshots', (req, res) => {
   loadDatabase();
   const { key } = req.query;
-  if (!key) return res.json(screenshots);
+  if (!key || !key.trim()) return res.json(screenshots);
 
   const cleanKey = key.trim().toUpperCase();
-  let filtered = screenshots.filter(s => s.key.toUpperCase() === cleanKey);
-  if (filtered.length === 0) filtered = screenshots;
+  let filtered = screenshots.filter(s => 
+    s.key.toUpperCase() === cleanKey || 
+    s.key.toUpperCase().includes(cleanKey) || 
+    cleanKey.includes(s.key.toUpperCase())
+  );
   return res.json(filtered);
 });
 

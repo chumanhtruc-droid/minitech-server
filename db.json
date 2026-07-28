@@ -1,29 +1,48 @@
 {
   "keys": [
     {
-      "key": "MINITECH-1B0A-9BFE-7FFD",
-      "createdAt": "2026-07-24T17:31:29.835Z",
-      "status": "active",
-      "durationHours": 0,
-      "activatedAt": null,
-      "expiresAt": null
+      "id": 1,
+      "key": "MINI-DAY-2026-X89K-912A",
+      "type": "Tool Ngày",
+      "createdAt": "2026-07-01T00:00:00.000Z",
+      "expirationDate": "2026-12-31T00:00:00.000Z",
+      "status": "Active",
+      "boundDeviceId": null,
+      "boundMachineName": null,
+      "note": "Key dùng thử 1 ngày"
     },
     {
-      "key": "MINITECH-7F62-2270-EA6F",
-      "createdAt": "2026-07-24T17:42:31.515Z",
-      "status": "active",
-      "durationHours": 0,
-      "activatedAt": null,
-      "expiresAt": null
+      "id": 2,
+      "key": "MINI-MONTH-2026-K92B-441F",
+      "type": "Tool Tháng",
+      "createdAt": "2026-07-01T00:00:00.000Z",
+      "expirationDate": "2026-08-30T00:00:00.000Z",
+      "status": "Active",
+      "boundDeviceId": null,
+      "boundMachineName": null,
+      "note": "Key Hỗ Trợ Kỹ Thuật VIP"
     },
     {
-      "key": "MINITECH-4F8E-B3EE-32D1",
-      "createdAt": "2026-07-24T17:49:34.478Z",
-      "status": "active",
-      "durationHours": 0,
-      "activatedAt": null,
-      "expiresAt": null
+      "id": 3,
+      "key": "MINI-TERM-2026-Z77P-9002",
+      "type": "Tool Kỳ",
+      "createdAt": "2026-07-01T00:00:00.000Z",
+      "expirationDate": "2027-01-01T00:00:00.000Z",
+      "status": "Active",
+      "boundDeviceId": null,
+      "boundMachineName": null,
+      "note": "Key Hợp Đồng Kỳ 6 Tháng"
     }
   ],
-  "screenshots": []
+  "screenshots": [],
+  "chatMessages": [],
+  "auditLogs": [
+    {
+      "id": 1,
+      "timestamp": "2026-07-28T16:00:00.000Z",
+      "action": "SYSTEM_START",
+      "actor": "System",
+      "details": "Server MiniTech Support đã khởi động."
+    }
+  ]
 }
