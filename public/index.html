@@ -47,7 +47,6 @@
 
   <script type="text/babel">
     const { useState, useEffect, useRef } = React;
-
     const API_BASE = window.location.origin;
 
     function formatImageSrc(imgStr) {
@@ -75,41 +74,44 @@
 
       const chatEndRef = useRef(null);
 
-      useEffect(() => {
-        fetchScreenshots('');
-        fetchChatMessages('');
+      const fetchScreenshots = async (keyFilter) => {
+        try {
+          const url = keyFilter ? `${API_BASE}/api/session/screenshots?key=${encodeURIComponent(keyFilter)}` : `${API_BASE}/api/session/screenshots`;
+          const res = await fetch(url);
+          if (res.ok) {
+            const data = await res.json();
+            if (Array.isArray(data)) {
+              setScreenshots(data);
+              if (data.length > 0) {
+                // Auto select newest shot
+                setSelectedShot(data[0]);
+              }
+            }
+          }
+        } catch(e){}
+      };
 
-        // Automatic 3s polling fallback for cloud hosts without WebSocket
+      const fetchChatMessages = async (keyFilter) => {
+        try {
+          const url = keyFilter ? `${API_BASE}/api/chat/messages?key=${encodeURIComponent(keyFilter)}` : `${API_BASE}/api/chat/messages`;
+          const res = await fetch(url);
+          if (res.ok) {
+            const data = await res.json();
+            if (Array.isArray(data)) setChatMessages(data);
+          }
+        } catch(e){}
+      };
+
+      useEffect(() => {
+        fetchScreenshots(activeSupportKey);
+        fetchChatMessages(activeSupportKey);
+
         const timer = setInterval(() => {
           fetchScreenshots(activeSupportKey);
           fetchChatMessages(activeSupportKey);
-        }, 3000);
+        }, 2000);
 
-        let ws = null;
-        try {
-          const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-          ws = new WebSocket(`${wsProtocol}//${window.location.host}`);
-          ws.onmessage = (event) => {
-            try {
-              const msg = JSON.parse(event.data);
-              if (msg.type === 'NEW_SCREENSHOT') {
-                if (msg.data && msg.data.key) setActiveSupportKey(msg.data.key);
-                setScreenshots(prev => [msg.data, ...prev]);
-              } else if (msg.type === 'CHAT_MESSAGE') {
-                setChatMessages(prev => [msg, ...prev]);
-              } else if (msg.type === 'SESSION_CLEARED') {
-                setScreenshots([]);
-                setChatMessages([]);
-                setSelectedShot(null);
-              }
-            } catch(e){}
-          };
-        } catch(ex){}
-
-        return () => {
-          clearInterval(timer);
-          if (ws) { try { ws.close(); } catch(e){} }
-        };
+        return () => clearInterval(timer);
       }, [activeSupportKey]);
 
       useEffect(() => {
@@ -118,39 +120,16 @@
         }
       }, [chatMessages]);
 
-      const fetchScreenshots = async (key) => {
-        try {
-          const url = key ? `${API_BASE}/api/session/screenshots?key=${encodeURIComponent(key)}` : `${API_BASE}/api/session/screenshots`;
-          const res = await fetch(url);
-          if (res.ok) {
-            const data = await res.json();
-            setScreenshots(data);
-            if (data.length > 0) {
-              setSelectedShot(data[0]);
-            }
-          }
-        } catch(e){}
-      };
-
-      const fetchChatMessages = async (key) => {
-        try {
-          const url = key ? `${API_BASE}/api/chat/messages?key=${encodeURIComponent(key)}` : `${API_BASE}/api/chat/messages`;
-          const res = await fetch(url);
-          if (res.ok) {
-            const data = await res.json();
-            setChatMessages(data);
-          }
-        } catch(e){}
-      };
-
       const handleSendSupportChat = async (textToSend) => {
         const messageText = textToSend || chatInputText;
         if (!messageText.trim()) return;
+
+        const targetKey = selectedShot ? selectedShot.key : (activeSupportKey || '');
         try {
           await fetch(`${API_BASE}/api/chat/send`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ key: activeSupportKey, sender: 'Support', text: messageText.trim() })
+            body: JSON.stringify({ key: targetKey, sender: 'Support', text: messageText })
           });
           setChatInputText('');
           fetchChatMessages(activeSupportKey);
@@ -165,7 +144,6 @@
 
         const zip = new JSZip();
         const imgFolder = zip.folder(`Support_Screenshots_${activeSupportKey || 'Session'}`);
-
         const ordered = [...screenshots].reverse();
 
         ordered.forEach((s, idx) => {
@@ -191,7 +169,7 @@
 
       return (
         <div className="flex flex-col min-h-screen">
-          {/* Support Header Bar */}
+          {/* Header */}
           <header className="glass sticky top-0 z-50 border-b border-gray-800 px-6 py-4 flex items-center justify-between">
             <div className="flex items-center space-x-3">
               <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-brand-600 to-blue-400 flex items-center justify-center font-bold text-white shadow-lg glow-blue text-xl">
@@ -199,7 +177,7 @@
               </div>
               <div>
                 <h1 className="font-bold text-lg text-white tracking-wide">MiniTech Support Viewer</h1>
-                <p className="text-xs text-gray-400">Trang Hỗ Trợ Kỹ Thuật Từ Xa Realtime</p>
+                <p className="text-xs text-gray-400">Trang Hỗ Trợ Kỹ Thuật Từ Xa Realtime (Tự Động Nhận Ảnh Mới)</p>
               </div>
             </div>
 
@@ -213,22 +191,23 @@
             </div>
           </header>
 
-          {/* Main Support Area */}
+          {/* Main Area */}
           <main className="flex-1 p-6 max-w-7xl w-full mx-auto space-y-6">
 
+            {/* Filter Bar */}
             <div className="glass-card p-4 rounded-xl flex flex-col md:flex-row items-center justify-between gap-4">
               <div className="flex items-center space-x-3">
-                <span className="text-sm font-bold text-white">Phiên Support:</span>
+                <span className="text-sm font-bold text-white">Lọc Theo Mã Key:</span>
                 <input 
                   type="text" 
-                  placeholder="Mã Key..."
+                  placeholder="Để trống xem tất cả ảnh..."
                   value={activeSupportKey} 
                   onChange={e => setActiveSupportKey(e.target.value.toUpperCase())}
-                  className="bg-dark-900 border border-gray-700 font-mono font-bold text-blue-400 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-brand-500"
+                  className="bg-dark-900 border border-gray-700 font-mono font-bold text-blue-400 rounded-lg px-3.5 py-2 text-sm focus:outline-none focus:border-brand-500 w-64"
                 />
                 <button 
                   onClick={() => { fetchScreenshots(activeSupportKey); fetchChatMessages(activeSupportKey); }}
-                  className="px-3.5 py-1.5 bg-brand-600 text-white rounded-lg text-xs font-semibold hover:bg-brand-700">
+                  className="px-4 py-2 bg-brand-600 text-white rounded-lg text-xs font-semibold hover:bg-brand-700 shadow">
                   Tải Dữ Liệu
                 </button>
               </div>
@@ -239,40 +218,51 @@
                   className="px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white font-bold text-xs rounded-xl shadow-lg flex items-center space-x-2 transition">
                   <span>📦 TẢI FILE ZIP TẤT CẢ ÁNH ({screenshots.length})</span>
                 </button>
-                <div className="flex items-center space-x-2 text-xs text-emerald-400">
+                <div className="flex items-center space-x-2 text-xs text-emerald-400 bg-emerald-500/10 px-3 py-1.5 rounded-lg border border-emerald-500/20">
                   <span className="relative flex h-2.5 w-2.5">
                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                     <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
                   </span>
-                  <span>Realtime Active</span>
+                  <span className="font-semibold">Tự Động Cập Nhật (2s)</span>
                 </div>
               </div>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              {/* Left Column: Image Thumbnails Stream */}
-              <div className="glass-card p-4 rounded-2xl space-y-4 max-h-[700px] overflow-y-auto">
-                <h3 className="text-xs font-bold uppercase text-gray-400 tracking-wider">Danh Sách Ảnh Chụp ({screenshots.length})</h3>
-                
+            {/* Viewer Workspace */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+              
+              {/* Left Thumbnails List */}
+              <div className="lg:col-span-4 glass-card p-4 rounded-2xl border border-gray-800 space-y-3 max-h-[700px] overflow-y-auto">
+                <h3 className="text-xs uppercase font-bold text-gray-400 tracking-wider mb-2">
+                  Danh Sách Ảnh Chụp ({screenshots.length})
+                </h3>
+
                 {screenshots.length === 0 ? (
-                  <p className="text-xs text-gray-500 italic py-8 text-center">Chưa có ảnh chụp nào. Nhấn Ctrl+X trên máy client để chụp.</p>
+                  <div className="text-center py-12 space-y-2 text-gray-500">
+                    <div className="text-3xl">📷</div>
+                    <p className="text-xs font-semibold">Chưa có ảnh nào được tải lên.</p>
+                    <p className="text-[11px] text-gray-600">Bấm 📸 Gửi Ảnh trên tool client để gửi ảnh mới.</p>
+                  </div>
                 ) : (
-                  screenshots.map(s => {
-                    const imgTitle = getScreenshotLabel(s);
+                  screenshots.map((shot) => {
+                    const isSelected = selectedShot && selectedShot.id === shot.id;
                     return (
                       <div 
-                        key={s.id}
-                        onClick={() => setSelectedShot(s)}
-                        className={`p-3 rounded-xl border transition cursor-pointer flex items-center space-x-3 ${selectedShot?.id === s.id ? 'bg-brand-600/20 border-brand-500 glow-blue' : 'bg-dark-900/60 border-gray-800 hover:border-gray-700'}`}>
-                        <div className="w-16 h-12 bg-dark-800 rounded-lg overflow-hidden border border-gray-700 flex-shrink-0 flex items-center justify-center text-[10px] text-gray-500">
-                          {s.imageBase64 ? <img src={formatImageSrc(s.imageBase64)} className="w-full h-full object-cover" /> : '📷 Screen'}
-                        </div>
-                        <div className="flex-1 min-w-0 text-xs">
+                        key={shot.id}
+                        onClick={() => setSelectedShot(shot)}
+                        className={`p-3 rounded-xl cursor-pointer transition border flex items-center space-x-3 ${isSelected ? 'bg-brand-500/20 border-brand-500 glow-blue' : 'bg-dark-900/60 border-gray-800 hover:border-gray-700'}`}>
+                        <img 
+                          src={formatImageSrc(shot.imageBase64)} 
+                          alt="Thumbnail" 
+                          className="w-16 h-12 object-cover rounded-lg border border-gray-700"
+                        />
+                        <div className="flex-1 min-w-0">
                           <div className="flex items-center justify-between">
-                            <span className="font-bold text-amber-400">{imgTitle}</span>
+                            <span className="font-bold text-xs text-white">{getScreenshotLabel(shot)}</span>
+                            <span className="text-[10px] text-gray-400 font-mono">{formatDate(shot.capturedAt)}</span>
                           </div>
-                          <p className="text-[11px] text-gray-400 truncate mt-0.5">👤 User: {s.windowsUser}</p>
-                          <p className="text-[10px] text-gray-500">{formatDate(s.capturedAt)}</p>
+                          <p className="text-[11px] font-mono font-bold text-blue-400 truncate mt-0.5">{shot.key}</p>
+                          <p className="text-[10px] text-gray-500 truncate mt-0.5">💻 {shot.machineName || 'ClientPC'}</p>
                         </div>
                       </div>
                     );
@@ -280,91 +270,107 @@
                 )}
               </div>
 
-              {/* Right Column: Full Screen Viewer & 2-Way Chat Stream */}
-              <div className="lg:col-span-2 glass-card p-6 rounded-2xl flex flex-col space-y-5">
-                {selectedShot ? (
-                  <>
-                    <div className="flex items-center justify-between border-b border-gray-800 pb-3 text-xs">
-                      <div>
-                        <span className="font-bold text-white text-base">{getScreenshotLabel(selectedShot)} (ID #{selectedShot.id})</span>
-                        <p className="text-gray-400 text-[11px] mt-0.5">Máy: <strong className="text-blue-400">{selectedShot.machineName}</strong> | User: <strong>{selectedShot.windowsUser}</strong> | Thời gian: {formatDate(selectedShot.capturedAt)}</p>
-                      </div>
-                      <span className="px-3 py-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 rounded-lg font-bold">Phiên Hỗ Trợ Active</span>
-                    </div>
-
-                    {/* Full Screen Image View */}
-                    <div className="w-full h-[360px] bg-dark-900 rounded-xl overflow-hidden border border-gray-800 flex items-center justify-center relative p-2">
-                      {selectedShot.imageBase64 ? (
-                        <img src={formatImageSrc(selectedShot.imageBase64)} className="max-h-full max-w-full object-contain rounded-lg shadow-2xl" />
-                      ) : (
-                        <div className="text-center p-8 text-gray-500 text-xs">
-                          📷 Ảnh màn hình xem trước
+              {/* Right Big Viewer & 2-Way Chat */}
+              <div className="lg:col-span-8 space-y-6">
+                
+                {/* Big Image Card */}
+                <div className="glass-card p-5 rounded-2xl border border-gray-800 space-y-4">
+                  {selectedShot ? (
+                    <div>
+                      <div className="flex items-center justify-between pb-3 border-b border-gray-800/80">
+                        <div>
+                          <h2 className="text-base font-bold text-white flex items-center space-x-2">
+                            <span>{getScreenshotLabel(selectedShot)}</span>
+                            <span className="text-xs font-mono font-normal text-blue-400">({selectedShot.key})</span>
+                          </h2>
+                          <p className="text-xs text-gray-400 mt-0.5">
+                            Máy: <span className="text-purple-300 font-mono font-semibold">{selectedShot.machineName}</span> | 
+                            User: <span className="text-gray-300 font-semibold">{selectedShot.windowsUser}</span> | 
+                            Thời gian: <span className="text-amber-300 font-mono">{formatDate(selectedShot.capturedAt)}</span>
+                          </p>
                         </div>
-                      )}
-                    </div>
-
-                    {/* 2-Way Realtime Chat Box */}
-                    <div className="space-y-4 bg-dark-900/90 p-5 rounded-2xl border border-gray-700 shadow-2xl">
-                      <div className="flex items-center justify-between">
-                        <h4 className="text-xs font-bold text-amber-400 uppercase tracking-wider flex items-center space-x-2">
-                          <span>💬 KHUNG CHAT REALTIME 2 CHIỀU (NGƯỜI DÙNG BẤM PHÍM ` ĐỂ NHẮN LẠI)</span>
-                        </h4>
+                        <span className="px-3 py-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 rounded-full font-bold text-xs">
+                          ● Hiển Thị Mới Nhất
+                        </span>
                       </div>
 
-                      {/* Quick Answer Buttons (A B C D E) */}
-                      <div className="grid grid-cols-5 gap-3">
-                        {['A', 'B', 'C', 'D', 'E'].map((opt) => (
-                          <button
-                            key={opt}
-                            onClick={() => handleSendSupportChat(`Đáp án: ${opt}`)}
-                            className="py-2.5 rounded-xl font-bold text-sm bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white shadow-lg transition transform active:scale-95 border border-emerald-400/40">
-                            Gửi {opt}
-                          </button>
-                        ))}
-                      </div>
-
-                      {/* Chat Messages Stream */}
-                      <div className="bg-dark-900 p-4 rounded-xl max-h-44 overflow-y-auto space-y-3 border border-gray-800 text-xs">
-                        {chatMessages.length === 0 ? (
-                          <p className="text-gray-500 italic text-center py-4 text-xs">Chưa có tin nhắn nào. Nhập tin nhắn bên dưới hoặc nhấp Gửi A B C D E.</p>
-                        ) : (
-                          [...chatMessages].reverse().map((msg) => (
-                            <div key={msg.id || Math.random()} className={`flex flex-col ${msg.sender === 'Support' ? 'items-end' : 'items-start'}`}>
-                              <div className={`px-4 py-2 rounded-2xl max-w-[85%] shadow ${msg.sender === 'Support' ? 'bg-brand-600 text-white rounded-br-none' : 'bg-emerald-600 text-white rounded-bl-none border border-emerald-400/30'}`}>
-                                <span className="font-bold block text-[10px] opacity-80 mb-0.5">{msg.sender === 'Support' ? '💬 Support (Bạn)' : '👤 Người Dùng (Client)'}:</span>
-                                <span className="text-xs font-semibold">{msg.text}</span>
-                              </div>
-                            </div>
-                          ))
-                        )}
-                        <div ref={chatEndRef} />
-                      </div>
-
-                      {/* Support Message Input Form */}
-                      <div className="flex gap-2">
-                        <input 
-                          type="text"
-                          placeholder="Gõ tin nhắn gửi người dùng (Ví dụ: Đáp án: A)..."
-                          value={chatInputText}
-                          onChange={e => setChatInputText(e.target.value)}
-                          onKeyDown={e => { if (e.key === 'Enter') handleSendSupportChat(); }}
-                          className="flex-1 bg-dark-900 border border-gray-700 rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-brand-500 shadow-inner"
+                      <div className="mt-4 rounded-xl overflow-hidden border border-gray-800 bg-black/80 flex items-center justify-center min-h-[380px]">
+                        <img 
+                          src={formatImageSrc(selectedShot.imageBase64)} 
+                          alt="Full Screenshot" 
+                          className="max-h-[500px] w-auto object-contain rounded-lg shadow-2xl"
                         />
-                        <button 
-                          onClick={() => handleSendSupportChat()}
-                          className="px-6 py-2.5 bg-gradient-to-r from-brand-500 to-blue-600 hover:from-brand-600 hover:to-blue-700 text-white font-bold text-xs rounded-xl transition shadow-lg flex items-center space-x-1">
-                          <span>Gửi Tin Nhắn ↵</span>
-                        </button>
                       </div>
                     </div>
-                  </>
-                ) : (
-                  <div className="py-24 text-center text-gray-500 text-xs italic">
-                    Vui lòng chọn 1 ảnh chụp từ danh sách bên trái để xem & chat realtime.
+                  ) : (
+                    <div className="text-center py-20 space-y-3 text-gray-500">
+                      <div className="text-4xl">🖼️</div>
+                      <p className="text-sm font-semibold">Chưa chọn ảnh nào để xem.</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* 2-Way Chat Stream Card */}
+                <div className="glass-card p-5 rounded-2xl border border-gray-800 space-y-4">
+                  <h3 className="text-xs font-bold text-amber-300 uppercase tracking-wider flex items-center space-x-2">
+                    <span>💬 KHUNG CHAT REALTIME 2 CHIỀU (NGƯỜI DÙNG BẤM ` ĐỂ TRẢ LỜI)</span>
+                  </h3>
+
+                  {/* Quick Preset Buttons */}
+                  <div className="grid grid-cols-5 gap-2 text-xs">
+                    {['Gửi A', 'Gửi B', 'Gửi C', 'Gửi D', 'Gửi E'].map((opt) => (
+                      <button 
+                        key={opt}
+                        onClick={() => handleSendSupportChat(`Đáp án: ${opt.replace('Gửi ', '')}`)}
+                        className="py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow transition active:scale-95">
+                        {opt}
+                      </button>
+                    ))}
                   </div>
-                )}
+
+                  {/* Message Stream Window */}
+                  <div className="bg-dark-900/90 border border-gray-800 rounded-xl p-4 h-48 overflow-y-auto space-y-3 text-xs">
+                    {chatMessages.length === 0 ? (
+                      <p className="text-gray-500 text-center py-10">Chưa có tin nhắn chat nào trong phiên này.</p>
+                    ) : (
+                      [...chatMessages].reverse().map((msg) => (
+                        <div 
+                          key={msg.id || Math.random()} 
+                          className={`flex flex-col ${msg.sender === 'Support' ? 'items-end' : 'items-start'}`}>
+                          <div className={`max-w-xs px-3.5 py-2 rounded-2xl shadow font-semibold ${msg.sender === 'Support' ? 'bg-brand-600 text-white rounded-br-none' : 'bg-gray-800 text-emerald-300 border border-gray-700 rounded-bl-none'}`}>
+                            <span className="block text-[10px] opacity-75 mb-0.5">{msg.sender === 'Support' ? 'Support (Bạn):' : 'Khách Hàng:'}</span>
+                            {msg.text}
+                          </div>
+                          <span className="text-[9px] text-gray-500 mt-1 font-mono">{formatDate(msg.timestamp)}</span>
+                        </div>
+                      ))
+                    )}
+                    <div ref={chatEndRef} />
+                  </div>
+
+                  {/* Custom Message Input */}
+                  <div className="flex items-center space-x-2 pt-1">
+                    <input 
+                      type="text"
+                      placeholder="Gõ tin nhắn gửi người dùng (Ví dụ: Đáp án: A)..."
+                      value={chatInputText}
+                      onChange={e => setChatInputText(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') handleSendSupportChat(); }}
+                      className="flex-1 bg-dark-900 border border-gray-700 rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-brand-500"
+                    />
+                    <button 
+                      onClick={() => handleSendSupportChat()}
+                      className="px-5 py-2.5 bg-gradient-to-r from-brand-500 to-blue-600 hover:from-brand-600 hover:to-blue-700 text-white font-bold text-xs rounded-xl shadow transition">
+                      Gửi Tin Nhắn ↵
+                    </button>
+                  </div>
+
+                </div>
+
               </div>
+
             </div>
+
           </main>
         </div>
       );
