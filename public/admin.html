@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="vi" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MiniTech Support - Web Admin Key Portal</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: { sans: ['Inter', 'sans-serif'] },
+          colors: {
+            brand: {
+              50: '#e6f4ff',
+              500: '#0078d4',
+              600: '#0063b1',
+              700: '#004e8c'
+            },
+            dark: {
+              900: '#090d16',
+              800: '#111827',
+              700: '#1f293d',
+              600: '#334155'
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body { background-color: #090d16; color: #f3f4f6; font-family: 'Inter', sans-serif; }
+    .glass { background: rgba(17, 24, 39, 0.75); backdrop-filter: blur(16px); border: 1px solid rgba(255, 255, 255, 0.1); }
+    .glass-card { background: rgba(31, 41, 61, 0.6); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.08); }
+    .glow-blue { box-shadow: 0 0 25px -5px rgba(0, 120, 212, 0.4); }
+  </style>
+</head>
+<body class="min-h-screen">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+    const API_BASE = 'http://localhost:5000';
+
+    function App() {
+      const [isAuthenticated, setIsAuthenticated] = useState(false);
+      const [username, setUsername] = useState('admin');
+      const [password, setPassword] = useState('');
+      const [loginError, setLoginError] = useState('');
+
+      const [activeTab, setActiveTab] = useState('admin-keys');
+      const [keys, setKeys] = useState([]);
+      const [stats, setStats] = useState({});
+      const [logs, setLogs] = useState([]);
+      const [searchQuery, setSearchQuery] = useState('');
+      const [filterStatus, setFilterStatus] = useState('ALL');
+      const [filterType, setFilterType] = useState('ALL');
+
+      const [showCreateModal, setShowCreateModal] = useState(false);
+      const [newKeyType, setNewKeyType] = useState('Tool Tháng');
+      const [newKeyDays, setNewKeyDays] = useState(30);
+      const [newKeyNote, setNewKeyNote] = useState('');
+
+      useEffect(() => {
+        const savedToken = sessionStorage.getItem('adminToken');
+        if (savedToken) {
+          setIsAuthenticated(true);
+          fetchData();
+        }
+      }, []);
+
+      const fetchData = () => {
+        fetchKeys();
+        fetchStats();
+        fetchLogs();
+      };
+
+      const handleLogin = async (e) => {
+        e.preventDefault();
+        setLoginError('');
+
+        try {
+          const res = await fetch(`${API_BASE}/api/admin/login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password })
+          });
+          const data = await res.json();
+
+          if (data.success && data.token) {
+            sessionStorage.setItem('adminToken', data.token);
+            setIsAuthenticated(true);
+            fetchData();
+          } else {
+            setLoginError(data.message || 'Mật khẩu không chính xác.');
+          }
+        } catch(ex) {
+          setLoginError('Lỗi kết nối Server!');
+        }
+      };
+
+      const handleLogout = () => {
+        sessionStorage.removeItem('adminToken');
+        setIsAuthenticated(false);
+        setPassword('');
+      };
+
+      const fetchKeys = async () => {
+        try {
+          const res = await fetch(`${API_BASE}/api/admin/keys`);
+          const data = await res.json();
+          setKeys(data);
+        } catch(e){}
+      };
+
+      const fetchStats = async () => {
+        try {
+          const res = await fetch(`${API_BASE}/api/admin/stats`);
+          const data = await res.json();
+          setStats(data);
+        } catch(e){}
+      };
+
+      const fetchLogs = async () => {
+        try {
+          const res = await fetch(`${API_BASE}/api/admin/logs`);
+          const data = await res.json();
+          setLogs(data);
+        } catch(e){}
+      };
+
+      const handleCreateKey = async () => {
+        try {
+          await fetch(`${API_BASE}/api/admin/keys`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ type: newKeyType, customDays: newKeyDays, note: newKeyNote })
+          });
+          setShowCreateModal(false);
+          fetchKeys();
+          fetchStats();
+        } catch(e){}
+      };
+
+      const handleToggleStatus = async (id) => {
+        try {
+          await fetch(`${API_BASE}/api/admin/keys/${id}/toggle-status`, { method: 'PUT' });
+          fetchKeys();
+          fetchStats();
+        } catch(e){}
+      };
+
+      const handleExtendKey = async (id) => {
+        const days = prompt("Nhập số ngày muốn gia hạn thêm:", "30");
+        if (!days) return;
+        try {
+          await fetch(`${API_BASE}/api/admin/keys/${id}/extend`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ days: parseInt(days) })
+          });
+          fetchKeys();
+        } catch(e){}
+      };
+
+      const handleDeleteKey = async (id) => {
+        if (!confirm("Bạn có chắc chắn muốn xóa Key này không?")) return;
+        try {
+          await fetch(`${API_BASE}/api/admin/keys/${id}`, { method: 'DELETE' });
+          fetchKeys();
+          fetchStats();
+        } catch(e){}
+      };
+
+      const filteredKeys = keys.filter(k => {
+        const matchesQuery = k.key.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                             (k.boundMachineName && k.boundMachineName.toLowerCase().includes(searchQuery.toLowerCase()));
+        const matchesStatus = filterStatus === 'ALL' || k.status === filterStatus;
+        const matchesType = filterType === 'ALL' || k.type === filterType;
+        return matchesQuery && matchesStatus && matchesType;
+      });
+
+      // ------------------------------------------------------------------------
+      // LOGIN SCREEN FOR ADMIN PORTAL
+      // ------------------------------------------------------------------------
+      if (!isAuthenticated) {
+        return (
+          <div className="min-h-screen flex items-center justify-center p-4 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-900 via-purple-950 to-black">
+            <div className="glass-card max-w-md w-full p-8 rounded-3xl border border-brand-500/30 shadow-2xl space-y-6 glow-blue">
+              <div className="text-center space-y-2">
+                <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-brand-600 to-blue-400 mx-auto flex items-center justify-center font-bold text-white text-2xl shadow-xl">
+                  🔒
+                </div>
+                <h2 className="text-2xl font-bold text-white tracking-wide">Admin Portal Login</h2>
+                <p className="text-xs text-gray-400">Đăng Nhập Quản Lý Key Bản Quyền Tool</p>
+              </div>
+
+              {loginError && (
+                <div className="p-3 bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs rounded-xl text-center font-semibold">
+                  ⚠️ {loginError}
+                </div>
+              )}
+
+              <form onSubmit={handleLogin} className="space-y-4 text-xs">
+                <div>
+                  <label className="block text-gray-300 font-semibold mb-1.5 uppercase text-[10px] tracking-wider">Tên Tài Khoản:</label>
+                  <input 
+                    type="text" 
+                    value={username}
+                    onChange={e => setUsername(e.target.value)}
+                    placeholder="Tên tài khoản admin..."
+                    className="w-full bg-dark-900 border border-gray-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-brand-500 text-sm font-semibold"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-gray-300 font-semibold mb-1.5 uppercase text-[10px] tracking-wider">Mật Khẩu Access:</label>
+                  <input 
+                    type="password" 
+                    value={password}
+                    onChange={e => setPassword(e.target.value)}
+                    placeholder="Mật khẩu..."
+                    className="w-full bg-dark-900 border border-gray-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-brand-500 text-sm font-semibold"
+                    required
+                  />
+                </div>
+
+                <button 
+                  type="submit"
+                  className="w-full py-3.5 bg-gradient-to-r from-brand-500 to-blue-600 hover:from-brand-600 hover:to-blue-700 text-white font-bold text-sm rounded-xl shadow-lg glow-blue transition transform active:scale-95">
+                  ĐĂNG NHẬP ADMIN PORTAL 🔑
+                </button>
+              </form>
+            </div>
+          </div>
+        );
+      }
+
+      // ------------------------------------------------------------------------
+      // AUTHENTICATED ADMIN KEY PORTAL
+      // ------------------------------------------------------------------------
+      return (
+        <div className="flex flex-col min-h-screen">
+          {/* Header Bar */}
+          <header className="glass sticky top-0 z-50 border-b border-gray-800 px-6 py-4 flex items-center justify-between">
+            <div className="flex items-center space-x-3">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-brand-600 to-blue-400 flex items-center justify-center font-bold text-white shadow-lg glow-blue text-xl">
+                🔑
+              </div>
+              <div>
+                <h1 className="font-bold text-lg text-white tracking-wide">MiniTech Admin Key Portal</h1>
+                <p className="text-xs text-gray-400">Hệ Thống Tạo & Quản Lý Key Bản Quyền Tool</p>
+              </div>
+            </div>
+
+            {/* Navigation Tabs */}
+            <div className="flex items-center space-x-3">
+              <div className="flex items-center space-x-2 bg-dark-800 p-1.5 rounded-xl border border-gray-800">
+                <button 
+                  onClick={() => setActiveTab('admin-keys')}
+                  className={`px-4 py-2 rounded-lg text-xs font-semibold transition ${activeTab === 'admin-keys' ? 'bg-brand-600 text-white shadow' : 'text-gray-400 hover:text-white'}`}>
+                  🔑 Quản Lý Key
+                </button>
+                <button 
+                  onClick={() => setActiveTab('admin-dashboard')}
+                  className={`px-4 py-2 rounded-lg text-xs font-semibold transition ${activeTab === 'admin-dashboard' ? 'bg-brand-600 text-white shadow' : 'text-gray-400 hover:text-white'}`}>
+                  📊 Dashboard
+                </button>
+                <button 
+                  onClick={() => setActiveTab('admin-logs')}
+                  className={`px-4 py-2 rounded-lg text-xs font-semibold transition ${activeTab === 'admin-logs' ? 'bg-brand-600 text-white shadow' : 'text-gray-400 hover:text-white'}`}>
+                  📜 Nhật Ký System
+                </button>
+              </div>
+
+              <button 
+                onClick={handleLogout}
+                className="px-3.5 py-2 rounded-xl bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 font-bold text-xs border border-rose-500/30 transition">
+                🚪 Đăng Xuất
+              </button>
+            </div>
+          </header>
+
+          {/* Main Content Area */}
+          <main className="flex-1 p-6 max-w-7xl w-full mx-auto">
+
+            {/* 1. ADMIN DASHBOARD */}
+            {activeTab === 'admin-dashboard' && (
+              <div className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
+                  <div className="glass-card p-5 rounded-2xl">
+                    <p className="text-xs text-gray-400 uppercase font-semibold">Tổng Số Key System</p>
+                    <h3 className="text-3xl font-bold text-white mt-2">{stats.totalKeys || 0}</h3>
+                    <p className="text-xs text-blue-400 mt-1">🔑 Tạo từ Admin Portal</p>
+                  </div>
+                  <div className="glass-card p-5 rounded-2xl">
+                    <p className="text-xs text-gray-400 uppercase font-semibold">Key Active Hoạt Động</p>
+                    <h3 className="text-3xl font-bold text-emerald-400 mt-2">{stats.activeKeys || 0}</h3>
+                    <p className="text-xs text-emerald-500 mt-1">● Đang khả dụng</p>
+                  </div>
+                  <div className="glass-card p-5 rounded-2xl">
+                    <p className="text-xs text-gray-400 uppercase font-semibold">Ảnh Màn Hình Đã Gửi</p>
+                    <h3 className="text-3xl font-bold text-purple-400 mt-2">{stats.totalScreenshots || 0}</h3>
+                    <p className="text-xs text-purple-400 mt-1">📸 Đồng thuận chia sẻ</p>
+                  </div>
+                  <div className="glass-card p-5 rounded-2xl">
+                    <p className="text-xs text-gray-400 uppercase font-semibold">Thiết Bị Khóa Gắn Định</p>
+                    <h3 className="text-3xl font-bold text-amber-400 mt-2">{stats.boundDevices || 0}</h3>
+                    <p className="text-xs text-amber-400 mt-1">🛡️ Khóa 1 máy / Key</p>
+                  </div>
+                </div>
+
+                <div className="glass-card p-6 rounded-2xl">
+                  <h3 className="text-base font-bold text-white mb-4">Nhật Ký Hoạt Động Mới Nhất</h3>
+                  <div className="space-y-3">
+                    {logs.slice(0, 5).map((log) => (
+                      <div key={log.id} className="flex items-center justify-between p-3 rounded-xl bg-dark-900/60 border border-gray-800/80 text-xs">
+                        <div className="flex items-center space-x-3">
+                          <span className="px-2.5 py-1 rounded-md bg-blue-500/10 text-blue-400 font-mono">{log.action}</span>
+                          <span className="text-gray-300">{log.details}</span>
+                        </div>
+                        <div className="text-gray-500">{new Date(log.timestamp).toLocaleTimeString()}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* 2. ADMIN KEY MANAGEMENT */}
+            {activeTab === 'admin-keys' && (
+              <div className="space-y-6">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div>
+                    <h2 className="text-xl font-bold text-white">Quản Lý Key Bản Quyền Tool</h2>
+                    <p className="text-xs text-gray-400">Tạo, gia hạn, khóa/mở và quản lý thiết bị sử dụng Key</p>
+                  </div>
+                  <button 
+                    onClick={() => setShowCreateModal(true)}
+                    className="px-5 py-2.5 bg-gradient-to-r from-brand-500 to-blue-600 hover:from-brand-600 hover:to-blue-700 text-white text-xs font-bold rounded-xl shadow-lg glow-blue transition">
+                    + Tạo Key Mới
+                  </button>
+                </div>
+
+                {/* Filters */}
+                <div className="glass-card p-4 rounded-xl flex flex-col md:flex-row items-center justify-between gap-4 text-xs">
+                  <input 
+                    type="text"
+                    placeholder="🔍 Tìm kiếm theo Mã Key hoặc Tên máy..."
+                    value={searchQuery}
+                    onChange={e => setSearchQuery(e.target.value)}
+                    className="w-full md:w-80 bg-dark-900 border border-gray-700 rounded-lg px-3.5 py-2 text-white focus:outline-none focus:border-brand-500"
+                  />
+                  <div className="flex items-center space-x-3 w-full md:w-auto">
+                    <select 
+                      value={filterStatus}
+                      onChange={e => setFilterStatus(e.target.value)}
+                      className="bg-dark-900 border border-gray-700 rounded-lg px-3 py-2 text-white focus:outline-none">
+                      <option value="ALL">Tất cả Trạng Thái</option>
+                      <option value="Active">Active (Hoạt động)</option>
+                      <option value="Disabled">Disabled (Đã khóa)</option>
+                    </select>
+                    <select 
+                      value={filterType}
+                      onChange={e => setFilterType(e.target.value)}
+                      className="bg-dark-900 border border-gray-700 rounded-lg px-3 py-2 text-white focus:outline-none">
+                      <option value="ALL">Tất cả Loại Key</option>
+                      <option value="Tool Ngày">Tool Ngày</option>
+                      <option value="Tool Tháng">Tool Tháng</option>
+                      <option value="Tool Kỳ">Tool Kỳ</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Keys Table */}
+                <div className="glass-card rounded-2xl overflow-hidden border border-gray-800">
+                  <table className="w-full text-left text-xs text-gray-300">
+                    <thead className="bg-dark-900/80 uppercase text-[10px] text-gray-400 font-semibold border-b border-gray-800">
+                      <tr>
+                        <th className="p-4">ID</th>
+                        <th className="p-4">Mã Key</th>
+                        <th className="p-4">Loại Key</th>
+                        <th className="p-4">Ngày Tạo</th>
+                        <th className="p-4">Ngày Hết Hạn</th>
+                        <th className="p-4">Thiết Bị Đã Khóa</th>
+                        <th className="p-4">Trạng Thái</th>
+                        <th className="p-4 text-right">Thao Tác</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-800/60">
+                      {filteredKeys.map((k) => (
+                        <tr key={k.id} className="hover:bg-gray-800/40 transition">
+                          <td className="p-4 font-mono text-gray-500">#{k.id}</td>
+                          <td className="p-4 font-mono font-bold text-blue-400">{k.key}</td>
+                          <td className="p-4">
+                            <span className="px-2.5 py-1 rounded-md bg-gray-800 text-gray-300 border border-gray-700">
+                              {k.type}
+                            </span>
+                          </td>
+                          <td className="p-4 text-gray-400">{new Date(k.createdAt).toLocaleDateString()}</td>
+                          <td className="p-4 font-semibold text-amber-300">{new Date(k.expirationDate).toLocaleDateString()}</td>
+                          <td className="p-4 font-mono text-xs text-purple-300">
+                            {k.boundMachineName ? `💻 ${k.boundMachineName}` : <span className="text-gray-600">Chưa kích hoạt</span>}
+                          </td>
+                          <td className="p-4">
+                            <span className={`px-2.5 py-1 rounded-full font-bold text-[10px] ${k.status === 'Active' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30' : 'bg-rose-500/10 text-rose-400 border border-rose-500/30'}`}>
+                              {k.status === 'Active' ? '● Active' : '✕ Disabled'}
+                            </span>
+                          </td>
+                          <td className="p-4 text-right space-x-2">
+                            <button 
+                              onClick={() => handleToggleStatus(k.id)}
+                              className={`px-2.5 py-1 rounded-lg font-semibold text-[11px] ${k.status === 'Active' ? 'bg-amber-500/10 text-amber-400 hover:bg-amber-500/20' : 'bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20'}`}>
+                              {k.status === 'Active' ? 'Khóa Key' : 'Mở Khóa'}
+                            </button>
+                            <button 
+                              onClick={() => handleExtendKey(k.id)}
+                              className="px-2.5 py-1 rounded-lg bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 font-semibold text-[11px]">
+                              Gia Hạn
+                            </button>
+                            <button 
+                              onClick={() => handleDeleteKey(k.id)}
+                              className="px-2 py-1 rounded-lg bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 font-semibold text-[11px]">
+                              Xóa
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* 3. AUDIT LOGS */}
+            {activeTab === 'admin-logs' && (
+              <div className="space-y-4">
+                <h2 className="text-xl font-bold text-white">Nhật Ký Đăng Nhập & Activity System</h2>
+                <div className="glass-card rounded-2xl overflow-hidden border border-gray-800">
+                  <table className="w-full text-left text-xs text-gray-300">
+                    <thead className="bg-dark-900/80 uppercase text-[10px] text-gray-400 font-semibold border-b border-gray-800">
+                      <tr>
+                        <th className="p-4">ID</th>
+                        <th className="p-4">Thời Gian</th>
+                        <th className="p-4">Hành Động</th>
+                        <th className="p-4">Tác Giả</th>
+                        <th className="p-4">Chi Tiết Log</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-800/60">
+                      {logs.map((l) => (
+                        <tr key={l.id} className="hover:bg-gray-800/40">
+                          <td className="p-4 font-mono text-gray-500">#{l.id}</td>
+                          <td className="p-4 text-gray-400">{new Date(l.timestamp).toLocaleString()}</td>
+                          <td className="p-4"><span className="px-2 py-0.5 bg-blue-500/10 text-blue-400 font-mono rounded text-[11px]">{l.action}</span></td>
+                          <td className="p-4 font-semibold text-purple-300">{l.actor}</td>
+                          <td className="p-4 text-gray-300">{l.details}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+          </main>
+
+          {/* Modal Create New Key */}
+          {showCreateModal && (
+            <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+              <div className="glass-card max-w-md w-full p-6 rounded-2xl border border-gray-700 space-y-4">
+                <h3 className="text-lg font-bold text-white">Tạo Key Bản Quyền Mới</h3>
+                
+                <div className="space-y-3 text-xs">
+                  <div>
+                    <label className="block text-gray-400 mb-1">Loại Key Tool:</label>
+                    <select 
+                      value={newKeyType} 
+                      onChange={e => setNewKeyType(e.target.value)}
+                      className="w-full bg-dark-900 border border-gray-700 rounded-lg p-2.5 text-white">
+                      <option value="Tool Ngày">Tool Ngày (1 Ngày)</option>
+                      <option value="Tool Tháng">Tool Tháng (30 Ngày)</option>
+                      <option value="Tool Kỳ">Tool Kỳ (Tùy chỉnh số ngày)</option>
+                    </select>
+                  </div>
+
+                  {newKeyType === 'Tool Kỳ' && (
+                    <div>
+                      <label className="block text-gray-400 mb-1">Số Ngày Hạn Sử Dụng:</label>
+                      <input 
+                        type="number" 
+                        value={newKeyDays}
+                        onChange={e => setNewKeyDays(e.target.value)}
+                        className="w-full bg-dark-900 border border-gray-700 rounded-lg p-2.5 text-white"
+                      />
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="block text-gray-400 mb-1">Ghi Chú Khách Hàng / Đơn Hàng:</label>
+                    <input 
+                      type="text" 
+                      placeholder="VD: Hỗ trợ kỹ thuật phòng máy A"
+                      value={newKeyNote}
+                      onChange={e => setNewKeyNote(e.target.value)}
+                      className="w-full bg-dark-900 border border-gray-700 rounded-lg p-2.5 text-white"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-end space-x-3 pt-2">
+                  <button 
+                    onClick={() => setShowCreateModal(false)}
+                    className="px-4 py-2 bg-gray-800 text-gray-300 rounded-lg text-xs font-semibold hover:bg-gray-700">
+                    Hủy
+                  </button>
+                  <button 
+                    onClick={handleCreateKey}
+                    className="px-5 py-2 bg-brand-600 text-white rounded-lg text-xs font-bold hover:bg-brand-700 shadow">
+                    Tạo Key Ngay
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
