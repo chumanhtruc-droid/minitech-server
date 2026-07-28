@@ -118,13 +118,6 @@ function addLog(action, actor, details) {
   auditLogs.unshift(log);
 }
 
-// Self Keep-Alive Ping every 4 minutes to prevent Render Free tier cold-starts
-setInterval(() => {
-  try {
-    http.get('http://127.0.0.1:' + PORT + '/api/admin/stats', () => {});
-  } catch (e) {}
-}, 4 * 60 * 1000);
-
 // -------------------------------------------------------------
 // 1. ADMIN LOGIN API
 // -------------------------------------------------------------
@@ -452,10 +445,12 @@ app.get('/api/admin/stats', (req, res) => {
 
 app.get('/api/admin/logs', (req, res) => res.json(auditLogs));
 
-// BIND EXPLICITLY TO 0.0.0.0 FOR RENDER PORT DETECTION
-server.listen(PORT, '0.0.0.0', () => {
-  console.log(`=================================================`);
-  console.log(`  MiniTech Support Backend running on port ${PORT}`);
-  console.log(`  Listening on 0.0.0.0:${PORT} for Cloud Host     `);
-  console.log(`=================================================`);
-});
+if (require.main === module) {
+  server.listen(PORT, '0.0.0.0', () => {
+    console.log(`=================================================`);
+    console.log(`  MiniTech Support Backend running on port ${PORT}`);
+    console.log(`=================================================`);
+  });
+}
+
+module.exports = app;
