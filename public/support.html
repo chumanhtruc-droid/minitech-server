@@ -529,15 +529,6 @@
       if (container.querySelector('.empty-state')) container.innerHTML = '';
       screenshots.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
-      const serverIds = new Set(screenshots.map(s => s.id));
-      container.querySelectorAll('.screenshot-card').forEach(card => {
-        if (!serverIds.has(card.id.replace('card-', ''))) {
-          card.style.transition = 'all 0.3s ease';
-          card.style.opacity = '0';
-          setTimeout(() => card.remove(), 300);
-        }
-      });
-
       let newArrived = false;
       screenshots.forEach((s, index) => {
         const cardId = `card-${s.id}`;
