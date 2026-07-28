@@ -48,7 +48,7 @@
   <script type="text/babel">
     const { useState, useEffect, useRef } = React;
 
-    const API_BASE = 'http://localhost:5000';
+    const API_BASE = window.location.origin;
 
     function formatImageSrc(imgStr) {
       if (!imgStr) return '';
@@ -79,24 +79,26 @@
         fetchScreenshots('');
         fetchChatMessages('');
 
-        const ws = new WebSocket(`ws://${window.location.hostname}:5000`);
-        ws.onmessage = (event) => {
-          try {
-            const msg = JSON.parse(event.data);
-            if (msg.type === 'NEW_SCREENSHOT') {
-              if (msg.data && msg.data.key) setActiveSupportKey(msg.data.key);
-              setScreenshots(prev => [msg.data, ...prev]);
-            } else if (msg.type === 'CHAT_MESSAGE') {
-              setChatMessages(prev => [msg, ...prev]);
-            } else if (msg.type === 'SESSION_CLEARED') {
-              setScreenshots([]);
-              setChatMessages([]);
-              setSelectedShot(null);
-            }
-          } catch(e){}
-        };
-
-        return () => ws.close();
+        try {
+          const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+          const ws = new WebSocket(`${wsProtocol}//${window.location.host}`);
+          ws.onmessage = (event) => {
+            try {
+              const msg = JSON.parse(event.data);
+              if (msg.type === 'NEW_SCREENSHOT') {
+                if (msg.data && msg.data.key) setActiveSupportKey(msg.data.key);
+                setScreenshots(prev => [msg.data, ...prev]);
+              } else if (msg.type === 'CHAT_MESSAGE') {
+                setChatMessages(prev => [msg, ...prev]);
+              } else if (msg.type === 'SESSION_CLEARED') {
+                setScreenshots([]);
+                setChatMessages([]);
+                setSelectedShot(null);
+              }
+            } catch(e){}
+          };
+          return () => ws.close();
+        } catch(ex){}
       }, [activeSupportKey]);
 
       useEffect(() => {
