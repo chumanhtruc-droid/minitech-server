@@ -15,6 +15,38 @@ const JWT_SECRET = 'MiniTechSupport_SecretKey_2026_SecureAES256';
 const PORT = process.env.PORT || 5000;
 const KVDB_URL = 'https://kvdb.io/3Uq5HZHJoyF38JmP3P89GQ/minitech_data';
 
+// --- CLOUDINARY CDN CONFIGURATION (Miễn phí 25GB) ---
+const CLOUDINARY_CLOUD_NAME = process.env.CLOUDINARY_CLOUD_NAME || 'minitech-cloud';
+const CLOUDINARY_UPLOAD_PRESET = process.env.CLOUDINARY_UPLOAD_PRESET || 'minitech_preset';
+
+async function uploadToCloudinary(base64Image) {
+  if (!CLOUDINARY_CLOUD_NAME || !CLOUDINARY_UPLOAD_PRESET || !base64Image) return null;
+  try {
+    const fetchFn = globalThis.fetch || (await import('node-fetch')).default;
+    const url = `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`;
+    const formData = new URLSearchParams();
+    formData.append('file', base64Image.startsWith('data:') ? base64Image : `data:image/jpeg;base64,${base64Image}`);
+    formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
+
+    const res = await fetchFn(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: formData.toString()
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.secure_url) {
+        console.log(`[Cloudinary CDN 25GB] Uploaded -> ${data.secure_url}`);
+        return data.secure_url;
+      }
+    }
+  } catch (err) {
+    console.error('[Cloudinary Upload Error]:', err.message || err);
+  }
+  return null;
+}
+
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
@@ -253,7 +285,7 @@ app.post('/api/auth/validate-key', (req, res) => {
 // 3. SCREENSHOT API
 // -------------------------------------------------------------
 app.post('/api/session/upload-screenshot', (req, res) => {
-  loadDatabase(() => {
+  loadDatabase(async () => {
     const rawKey = req.body.key || req.body.Key;
     const machineName = req.body.machineName || req.body.MachineName || 'ClientPC';
     const windowsUser = req.body.windowsUser || req.body.WindowsUser || 'User';
@@ -274,12 +306,16 @@ app.post('/api/session/upload-screenshot', (req, res) => {
     }
     if (!cleanKey) cleanKey = 'MINI-DEFAULT';
 
+    // Cloudinary 25GB CDN upload
+    const cdnUrl = await uploadToCloudinary(imageBase64);
+
     const newShot = {
       id: Date.now(),
       key: cleanKey,
       machineName,
       windowsUser,
-      imageBase64,
+      imageBase64: cdnUrl || imageBase64,
+      cloudinaryUrl: cdnUrl || '',
       capturedAt,
       isRead: false,
       note: '',
